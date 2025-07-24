@@ -4,9 +4,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.springframework.ai.chat.ChatClient;
-import org.springframework.ai.chat.ChatResponse;
-import org.springframework.ai.chat.Generation;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -25,32 +25,33 @@ public class RagService {
 	@Value("${topk:10}")
 	private int topK;
 
-	private final ChatClient client;
+	private final ChatModel chatModel;
 
 	private final VectorStore store;
 
-	public RagService(ChatClient client, VectorStore store) {
-		this.client = client;
+	public RagService(ChatModel chatModel, VectorStore store) {
+		this.chatModel = chatModel;
 		this.store = store;
 	}
 
 	// tag::retrieve[]
 	public Generation retrieve(String message) {
-		SearchRequest request = SearchRequest.query(message).withTopK(topK);
+		// Create a search request to find relevant documents
+		SearchRequest request = SearchRequest.builder().query(message).topK(topK).build();
 		// Query Redis for the top K documents most relevant to the input message
 		List<Document> docs = store.similaritySearch(request);
 		Message systemMessage = getSystemMessage(docs);
 		UserMessage userMessage = new UserMessage(message);
 		// Assemble the complete prompt using a template
 		Prompt prompt = new Prompt(List.of(systemMessage, userMessage));
-		// Call the autowired chat client with the prompt
-		ChatResponse response = client.call(prompt);
+		// Call the autowired chat model with the prompt
+		ChatResponse response = chatModel.call(prompt);
 		return response.getResult();
 	}
 	// end::retrieve[]
 
 	private Message getSystemMessage(List<Document> similarDocuments) {
-		String documents = similarDocuments.stream().map(Document::getContent).collect(Collectors.joining("\n"));
+		String documents = similarDocuments.stream().map(doc -> doc.getText()).collect(Collectors.joining("\n"));
 		SystemPromptTemplate systemPromptTemplate = new SystemPromptTemplate(systemBeerPrompt);
 		return systemPromptTemplate.createMessage(Map.of("documents", documents));
 	}

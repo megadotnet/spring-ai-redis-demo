@@ -5,9 +5,8 @@ import java.util.zip.GZIPInputStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.autoconfigure.vectorstore.redis.RedisVectorStoreProperties;
 import org.springframework.ai.reader.JsonReader;
-import org.springframework.ai.vectorstore.RedisVectorStore;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -25,19 +24,16 @@ public class RagDataLoader implements ApplicationRunner {
 	@Value("classpath:/data/beers.json.gz")
 	private Resource data;
 
-	private final RedisVectorStore vectorStore;
+	private final VectorStore vectorStore;
 
-	private final RedisVectorStoreProperties properties;
-
-	public RagDataLoader(RedisVectorStore vectorStore, RedisVectorStoreProperties properties) {
+	public RagDataLoader(VectorStore vectorStore) {
 		this.vectorStore = vectorStore;
-		this.properties = properties;
 	}
 
 	@Override
 	public void run(ApplicationArguments args) throws Exception {
-		Map<String, Object> indexInfo = vectorStore.getJedis().ftInfo(properties.getIndex());
-		int numDocs = Integer.parseInt(String.valueOf(indexInfo.getOrDefault("num_docs", "0")));
+		// Use a dummy similarity search to check if embeddings exist
+		int numDocs = vectorStore.similaritySearch("test").size();
 		if (numDocs > 20000) {
 			logger.info("Embeddings already loaded. Skipping");
 			return;

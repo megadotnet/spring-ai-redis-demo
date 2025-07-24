@@ -2,7 +2,7 @@ package com.redis.demo.spring.ai;
 
 import java.util.UUID;
 
-import org.springframework.ai.chat.Generation;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,7 +31,7 @@ public class RagController {
 		// Extract user prompt from the body and pass it to the RagService
 		Generation generation = ragService.retrieve(prompt.getPrompt());
 		// Reply with the generated message
-		return Message.of(generation.getOutput().getContent());
+		return Message.of(generation.getOutput().getText());
 	}
 	//end::chatMessage[]
 
