@@ -9,10 +9,13 @@ import org.springframework.ai.vectorstore.RedisVectorStore.RedisVectorStoreConfi
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 @Configuration
 public class RagConfiguration {
 
+
+    @Primary
     @Bean
     TransformersEmbeddingClient transformersEmbeddingClient() {
         return new TransformersEmbeddingClient(MetadataMode.EMBED);
