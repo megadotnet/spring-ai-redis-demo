@@ -42,23 +42,6 @@ public class RagConfiguration {
         this.redisConnectionFactory = redisConnectionFactory;
     }
 
-   // @Primary
-   // @Bean
-   // EmbeddingModel embeddingModel() {
-   //     return new TransformersEmbeddingModel(MetadataMode.EMBED);
-   // }
-
-   //@Bean
-   //ChatModel chatModel() {
-   //    OpenAiChatOptions options = OpenAiChatOptions.builder()
-   //            .model("deepseek-ai/DeepSeek-V3")
-   //            .build();
-   //    return OpenAiChatModel.builder()
-   //            .openAiApi(openAiApi())
-   //            .defaultOptions(options)
-   //            .build();
-   //}
-
     @Bean
     public JedisPooled jedisPooled() {
         return new JedisPooled(redisHost, redisPort);
@@ -72,15 +55,6 @@ public class RagConfiguration {
                 .initializeSchema(initializeSchema)
                 .build();
     }
-
-    //@Bean
-    //OpenAiApi openAiApi() {
-    //    return OpenAiApi.builder()
-    //            .baseUrl("https://api.siliconflow.cn/v1")
-    //            .apiKey(System.getenv("OPENAPI_KEY"))
-    //            .build();
-    //}
-//
 
 
     @Bean
