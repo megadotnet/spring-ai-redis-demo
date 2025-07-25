@@ -7,14 +7,16 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.transformers.TransformersEmbeddingModel;
-import org.springframework.ai.redis.RedisVectorStore;
-import org.springframework.ai.redis.RedisVectorStore.RedisVectorStoreConfig;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.redis.RedisVectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import redis.clients.jedis.JedisPooled;
+
+import java.time.Duration;
 
 @Configuration
 public class RagConfiguration {
@@ -25,8 +27,14 @@ public class RagConfiguration {
     @Value("${spring.ai.vectorstore.redis.prefix}")
     private String vectorStorePrefix;
 
-    @Value("${spring.ai.vectorstore.redis.dimensions}")
-    private int noOfDimensions;
+    @Value("${spring.data.redis.host}")
+    private String redisHost;
+
+    @Value("${spring.data.redis.port}")
+    private int redisPort;
+
+    @Value("${spring.ai.vectorstore.redis.initialize-schema}")
+    private boolean initializeSchema;
 
     private final RedisConnectionFactory redisConnectionFactory;
 
@@ -41,26 +49,42 @@ public class RagConfiguration {
     }
 
     @Bean
+    ChatModel chatModel() {
+        OpenAiChatOptions options = OpenAiChatOptions.builder()
+                .model("deepseek-ai/DeepSeek-V3")
+                .build();
+        return OpenAiChatModel.builder()
+                .openAiApi(openAiApi())
+                .defaultOptions(options)
+                .build();
+    }
+
+    @Bean
+    public JedisPooled jedisPooled() {
+        return new JedisPooled(redisHost, redisPort);
+    }
+
+    @Bean
     VectorStore vectorStore(EmbeddingModel embeddingModel) {
-        return new org.springframework.ai.redis.RedisVectorStore(redisConnectionFactory, embeddingModel, org.springframework.ai.redis.RedisVectorStore.RedisVectorStoreConfig.builder()
-                .withIndexName(indexName)
-                .withPrefix(vectorStorePrefix)
-                .withNoOfDimensions(noOfDimensions)
-                .build());
+        return RedisVectorStore.builder(jedisPooled(), embeddingModel)
+                .indexName(indexName)
+                .prefix(vectorStorePrefix)
+                .initializeSchema(initializeSchema)
+                .build();
     }
 
     @Bean
     OpenAiApi openAiApi() {
-        return OpenAiApi.builder().apiKey(System.getenv("OPENAI_API_KEY")).build();
+        return OpenAiApi.builder()
+                .baseUrl("https://api.siliconflow.cn/v1")
+                .apiKey(System.getenv("OPENAPI_KEY"))
+                .build();
     }
 
-    @Bean
-    ChatModel chatModel(OpenAiApi openAiApi) {
-        return new OpenAiChatModel(openAiApi, OpenAiChatOptions.builder().build());
-    }
+
 
     @Bean
-    RagService ragService(ChatModel chatModel, VectorStore vectorStore) {
+    public RagService ragService(ChatModel chatModel, VectorStore vectorStore) {
         return new RagService(chatModel, vectorStore);
     }
 
