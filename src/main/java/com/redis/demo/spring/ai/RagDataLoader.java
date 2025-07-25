@@ -1,10 +1,12 @@
 package com.redis.demo.spring.ai;
 
+import java.util.List;
 import java.util.Map;
 import java.util.zip.GZIPInputStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.JsonReader;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,7 +50,8 @@ public class RagDataLoader implements ApplicationRunner {
 		// Create a JSON reader with fields relevant to our use case
 		JsonReader loader = new JsonReader(file, KEYS);
 		// Use the autowired VectorStore to insert the documents into Redis
-		vectorStore.add(loader.get());
+		List<Document> documentList = loader.get();
+		vectorStore.add(documentList);
 		// end::loader[]
 		logger.info("Embeddings created.");
 	}
