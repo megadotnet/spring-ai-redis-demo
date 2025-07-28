@@ -3,6 +3,7 @@ package com.redis.demo.spring.ai;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.GZIPInputStream;
+import java.io.IOException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,17 +48,24 @@ public class RagDataLoader implements ApplicationRunner {
 			return;
 		}
 		Resource file = data;
-		if (data.getFilename().endsWith(".gz")) {
+		if (data.getFilename() != null && data.getFilename().endsWith(".gz")) {
 			GZIPInputStream inputStream = new GZIPInputStream(data.getInputStream());
 			file = new InputStreamResource(inputStream, "beers.json.gz");
 		}
 		logger.info("Creating Embeddings...");
 		// tag::loader[]
-		// Create a JSON reader with fields relevant to our use case
-		JsonReader loader = new JsonReader(file, KEYS);
-		// Use the autowired VectorStore to insert the documents into Redis
-		List<Document> documentList = loader.get();
-		vectorStore.add(documentList);
+		try {
+			// Create a JSON reader with fields relevant to our use case
+			JsonReader loader = new JsonReader(file, KEYS);
+			// Use the autowired VectorStore to insert the documents into Redis
+			List<Document> documentList = loader.get();
+			vectorStore.add(documentList);
+		} catch (RuntimeException e) {
+			if (e.getCause() instanceof IOException) {
+				throw (IOException) e.getCause();
+			}
+			throw e;
+		}
 		// end::loader[]
 		logger.info("Embeddings created.");
 	}
