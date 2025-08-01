@@ -2,12 +2,8 @@ package com.redis.demo.spring.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -16,10 +12,7 @@ import static org.mockito.Mockito.when;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.zip.GZIPOutputStream;
 import java.io.ByteArrayOutputStream;
 
@@ -32,13 +25,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.redis.RedisVectorStore;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.core.io.Resource;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPooled;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("RagDataLoader 单元测试")
@@ -48,16 +37,13 @@ class RagDataLoaderTest {
     private VectorStore vectorStore;
 
     @Mock
-    private RedisVectorStore redisVectorStore;
+    private DocumentCountProvider documentCountProvider;
 
     @Mock
     private Resource dataResource;
 
     @Mock
     private ApplicationArguments applicationArguments;
-
-    @Mock
-    private JedisPooled jedisPooled;
 
     private RagDataLoader ragDataLoader;
 
@@ -81,7 +67,7 @@ class RagDataLoaderTest {
 
     @BeforeEach
     void setUp() {
-        ragDataLoader = new RagDataLoader(vectorStore);
+        ragDataLoader = new RagDataLoader(vectorStore, documentCountProvider);
         ReflectionTestUtils.setField(ragDataLoader, "data", dataResource);
         ReflectionTestUtils.setField(ragDataLoader, "indexName", INDEX_NAME);
     }
@@ -90,64 +76,60 @@ class RagDataLoaderTest {
     @DisplayName("当数据已存在时应跳过加载")
     void shouldSkipLoadingWhenDataAlreadyExists() throws Exception {
         // Given
-        lenient().when(vectorStore.toString()).thenReturn("RedisVectorStore");
-        when(redisVectorStore.getJedis()).thenReturn(jedisPooled);
-        
-        Map<String, Object> indexInfo = new HashMap<>();
-        indexInfo.put("num_docs", "25000");
-        when(jedisPooled.ftInfo(INDEX_NAME)).thenReturn(indexInfo);
-        
-        // 设置 vectorStore 为 RedisVectorStore 的实例
-        ragDataLoader = new RagDataLoader(redisVectorStore);
-        ReflectionTestUtils.setField(ragDataLoader, "data", dataResource);
-        ReflectionTestUtils.setField(ragDataLoader, "indexName", INDEX_NAME);
+        when(documentCountProvider.getDocumentCount(INDEX_NAME)).thenReturn(25000);
 
         // When
         ragDataLoader.run(applicationArguments);
 
         // Then
-        verify(redisVectorStore, never()).add(anyList());
+        verify(vectorStore, never()).add(anyList());
         verify(dataResource, never()).getInputStream();
+        verify(documentCountProvider).getDocumentCount(INDEX_NAME);
     }
 
     @Test
     @DisplayName("当数据不存在时应成功加载普通JSON文件")
     void shouldLoadDataWhenNoExistingData() throws Exception {
         // Given
-        setupMockForDataLoading(false, JSON_DATA);
+        when(documentCountProvider.getDocumentCount(INDEX_NAME)).thenReturn(1000);
+        setupDataResourceMock(false, JSON_DATA);
 
         // When
         ragDataLoader.run(applicationArguments);
 
         // Then
         ArgumentCaptor<List<Document>> documentsCaptor = ArgumentCaptor.forClass(List.class);
-        verify(redisVectorStore).add(documentsCaptor.capture());
+        verify(vectorStore).add(documentsCaptor.capture());
         
         List<Document> capturedDocuments = documentsCaptor.getValue();
         assertThat(capturedDocuments).isNotEmpty();
+        verify(documentCountProvider).getDocumentCount(INDEX_NAME);
     }
 
     @Test
     @DisplayName("应正确处理GZIP压缩文件")
     void shouldHandleGzipFile() throws Exception {
         // Given
+        when(documentCountProvider.getDocumentCount(INDEX_NAME)).thenReturn(1000);
         byte[] gzipData = createGzipData(JSON_DATA);
-        setupMockForDataLoading(true, gzipData);
+        setupDataResourceMock(true, gzipData);
 
         // When
         ragDataLoader.run(applicationArguments);
 
         // Then
-        verify(redisVectorStore).add(anyList());
+        verify(vectorStore).add(anyList());
         verify(dataResource, times(2)).getFilename();
         verify(dataResource).getInputStream();
+        verify(documentCountProvider).getDocumentCount(INDEX_NAME);
     }
 
     @Test
     @DisplayName("当文件读取失败时应抛出异常")
     void shouldThrowExceptionWhenFileReadFails() throws Exception {
         // Given
-        setupMockForDataLoading(false, null);
+        when(documentCountProvider.getDocumentCount(INDEX_NAME)).thenReturn(1000);
+        when(dataResource.getFilename()).thenReturn("beers.json");
         when(dataResource.getInputStream()).thenThrow(new IOException("文件读取失败"));
 
         // When & Then
@@ -160,9 +142,10 @@ class RagDataLoaderTest {
     @DisplayName("当向量存储操作失败时应抛出异常")
     void shouldThrowExceptionWhenVectorStoreOperationFails() throws Exception {
         // Given
-        setupMockForDataLoading(false, JSON_DATA);
+        when(documentCountProvider.getDocumentCount(INDEX_NAME)).thenReturn(1000);
+        setupDataResourceMock(false, JSON_DATA);
         doThrow(new RuntimeException("向量存储操作失败"))
-            .when(redisVectorStore).add(anyList());
+            .when(vectorStore).add(anyList());
 
         // When & Then
         assertThatThrownBy(() -> ragDataLoader.run(applicationArguments))
@@ -171,88 +154,67 @@ class RagDataLoaderTest {
     }
 
     @Test
-    @DisplayName("应正确处理空的索引信息")
-    void shouldHandleEmptyIndexInfo() throws Exception {
+    @DisplayName("应正确处理文档数量为0的情况")
+    void shouldHandleZeroDocumentCount() throws Exception {
         // Given
-        when(redisVectorStore.getJedis()).thenReturn(jedisPooled);
-        Map<String, Object> emptyIndexInfo = new HashMap<>();
-        when(jedisPooled.ftInfo(INDEX_NAME)).thenReturn(emptyIndexInfo);
-        
+        when(documentCountProvider.getDocumentCount(INDEX_NAME)).thenReturn(0);
         setupDataResourceMock(false, JSON_DATA);
-        
-        ragDataLoader = new RagDataLoader(redisVectorStore);
-        ReflectionTestUtils.setField(ragDataLoader, "data", dataResource);
-        ReflectionTestUtils.setField(ragDataLoader, "indexName", INDEX_NAME);
 
         // When
         ragDataLoader.run(applicationArguments);
 
         // Then
-        verify(redisVectorStore).add(anyList());
+        verify(vectorStore).add(anyList());
+        verify(documentCountProvider).getDocumentCount(INDEX_NAME);
     }
 
     @Test
-    @DisplayName("应正确处理num_docs为字符串类型的情况")
-    void shouldHandleNumDocsAsString() throws Exception {
+    @DisplayName("应正确处理文档数量小于阈值的情况")
+    void shouldLoadWhenDocumentCountBelowThreshold() throws Exception {
         // Given
-        when(redisVectorStore.getJedis()).thenReturn(jedisPooled);
-        Map<String, Object> indexInfo = new HashMap<>();
-        indexInfo.put("num_docs", "15000");
-        when(jedisPooled.ftInfo(INDEX_NAME)).thenReturn(indexInfo);
-        
+        when(documentCountProvider.getDocumentCount(INDEX_NAME)).thenReturn(15000);
         setupDataResourceMock(false, JSON_DATA);
-        
-        ragDataLoader = new RagDataLoader(redisVectorStore);
-        ReflectionTestUtils.setField(ragDataLoader, "data", dataResource);
-        ReflectionTestUtils.setField(ragDataLoader, "indexName", INDEX_NAME);
 
         // When
         ragDataLoader.run(applicationArguments);
 
         // Then
-        verify(redisVectorStore).add(anyList());
+        verify(vectorStore).add(anyList());
+        verify(documentCountProvider).getDocumentCount(INDEX_NAME);
     }
 
     @Test
     @DisplayName("应正确处理边界值20000")
     void shouldHandleBoundaryValue() throws Exception {
         // Given
-        when(redisVectorStore.getJedis()).thenReturn(jedisPooled);
-        Map<String, Object> indexInfo = new HashMap<>();
-        indexInfo.put("num_docs", "20000");
-        when(jedisPooled.ftInfo(INDEX_NAME)).thenReturn(indexInfo);
-        
+        when(documentCountProvider.getDocumentCount(INDEX_NAME)).thenReturn(20000);
         setupDataResourceMock(false, JSON_DATA);
-        
-        ragDataLoader = new RagDataLoader(redisVectorStore);
-        ReflectionTestUtils.setField(ragDataLoader, "data", dataResource);
-        ReflectionTestUtils.setField(ragDataLoader, "indexName", INDEX_NAME);
 
         // When
         ragDataLoader.run(applicationArguments);
 
         // Then
-        verify(redisVectorStore).add(anyList());
+        verify(vectorStore).add(anyList());
+        verify(documentCountProvider).getDocumentCount(INDEX_NAME);
     }
 
-    /**
-     * 设置数据加载相关的Mock对象
-     */
-    private void setupMockForDataLoading(boolean isGzipFile, Object data) throws IOException {
-        when(redisVectorStore.getJedis()).thenReturn(jedisPooled);
-        
-        Map<String, Object> indexInfo = new HashMap<>();
-        indexInfo.put("num_docs", "1000");
-        when(jedisPooled.ftInfo(INDEX_NAME)).thenReturn(indexInfo);
-        
-        if (data != null) {
-            setupDataResourceMock(isGzipFile, data);
-        }
-        
-        ragDataLoader = new RagDataLoader(redisVectorStore);
-        ReflectionTestUtils.setField(ragDataLoader, "data", dataResource);
-        ReflectionTestUtils.setField(ragDataLoader, "indexName", INDEX_NAME);
+    @Test
+    @DisplayName("当DocumentCountProvider不支持操作时应继续加载数据")
+    void shouldContinueLoadingWhenDocumentCountProviderNotSupported() throws Exception {
+        // Given
+        when(documentCountProvider.getDocumentCount(INDEX_NAME))
+            .thenThrow(new UnsupportedOperationException("当前VectorStore实现不支持文档数量查询"));
+        setupDataResourceMock(false, JSON_DATA);
+
+        // When
+        ragDataLoader.run(applicationArguments);
+
+        // Then
+        verify(vectorStore).add(anyList());
+        verify(documentCountProvider).getDocumentCount(INDEX_NAME);
     }
+
+
 
     /**
      * 设置数据资源Mock对象

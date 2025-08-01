@@ -1,7 +1,6 @@
 package com.redis.demo.spring.ai;
 
 import java.util.List;
-import java.util.Map;
 import java.util.zip.GZIPInputStream;
 import java.io.IOException;
 
@@ -10,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.JsonReader;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.redis.RedisVectorStore;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -36,25 +35,30 @@ public class RagDataLoader implements ApplicationRunner {
 
 	// 定义VectorStore实例
 	private final VectorStore vectorStore;
+	
+	// 文档数量提供者
+	private final DocumentCountProvider documentCountProvider;
 
-	// 构造函数，注入VectorStore实例
-	public RagDataLoader(VectorStore vectorStore) {
+	// 构造函数，注入VectorStore实例和文档数量提供者
+	public RagDataLoader(VectorStore vectorStore, DocumentCountProvider documentCountProvider) {
 		this.vectorStore = vectorStore;
+		this.documentCountProvider = documentCountProvider;
 	}
 
 
 	@Override
 	public void run(ApplicationArguments args) throws Exception {
-		// 获取RedisVectorStore实例
-		RedisVectorStore redisVectorStore = (RedisVectorStore) vectorStore;
-		// 获取索引信息
-		Map<String, Object> indexInfo = redisVectorStore.getJedis().ftInfo(indexName);
-		// 获取索引中的文档数量
-		int numDocs = Integer.parseInt(String.valueOf(indexInfo.getOrDefault("num_docs", "0")));
-		// 如果文档数量大于20000，则跳过
-		if (numDocs > 20000) {
-			logger.info("Embeddings already loaded. Skipping");
-			return;
+		// 检查文档数量，如果已有足够数据则跳过加载
+		try {
+			int numDocs = documentCountProvider.getDocumentCount(indexName);
+			if (numDocs > 20000) {
+				logger.info("Embeddings already loaded (found {} documents). Skipping", numDocs);
+				return;
+			}
+			logger.info("Found {} existing documents, proceeding with data loading", numDocs);
+		} catch (UnsupportedOperationException e) {
+			logger.warn("Document count check not supported for current VectorStore implementation: {}", e.getMessage());
+			logger.info("Proceeding with data loading without document count check");
 		}
 		// 获取数据资源
 		Resource file = data;
