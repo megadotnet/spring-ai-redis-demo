@@ -50,9 +50,13 @@ public class RagService {
 	}
 	// end::retrieve[]
 
+// 根据相似的文档列表获取系统消息
 	private Message getSystemMessage(List<Document> similarDocuments) {
+		// 将相似的文档列表中的文本拼接成一个字符串
 		String documents = similarDocuments.stream().map(doc -> doc.getText()).collect(Collectors.joining("\n"));
+		// 创建一个系统提示模板，使用系统啤酒提示
 		SystemPromptTemplate systemPromptTemplate = new SystemPromptTemplate(systemBeerPrompt);
+		// 使用模板创建消息，将拼接的文档字符串作为参数
 		return systemPromptTemplate.createMessage(Map.of("documents", documents));
 	}
 

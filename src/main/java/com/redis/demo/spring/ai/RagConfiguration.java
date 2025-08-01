@@ -52,15 +52,21 @@ public class RagConfiguration {
     }
 
     @Bean
+    // 定义一个名为jedisPooled的Bean
     public JedisPooled jedisPooled() {
+        // 创建一个HostAndPort对象，用于存储Redis的主机和端口
         HostAndPort hostAndPort = new HostAndPort(redisHost, redisPort);
         
+        // 判断Redis的密码是否为空
         if (redisPassword != null && !redisPassword.isEmpty()) {
+            // 如果不为空，创建一个JedisClientConfig对象，用于存储Redis的密码
             JedisClientConfig clientConfig = DefaultJedisClientConfig.builder()
                     .password(redisPassword)
                     .build();
+            // 返回一个带有密码的JedisPooled对象
             return new JedisPooled(hostAndPort, clientConfig);
         } else {
+            // 如果为空，返回一个不带密码的JedisPooled对象
             return new JedisPooled(hostAndPort);
         }
     }

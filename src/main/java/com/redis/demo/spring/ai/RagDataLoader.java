@@ -23,16 +23,21 @@ public class RagDataLoader implements ApplicationRunner {
 
 	private static final Logger logger = LoggerFactory.getLogger(RagDataLoader.class);
 
+	// 定义关键字数组
 	private static final String[] KEYS = { "name", "abv", "ibu", "description" };
 
+	// 获取数据资源
 	@Value("classpath:/data/beers.json.gz")
 	private Resource data;
 
+	// 获取索引名称
 	@Value("${spring.ai.vectorstore.redis.index}")
 	private String indexName;
 
+	// 定义VectorStore实例
 	private final VectorStore vectorStore;
 
+	// 构造函数，注入VectorStore实例
 	public RagDataLoader(VectorStore vectorStore) {
 		this.vectorStore = vectorStore;
 	}
@@ -40,14 +45,20 @@ public class RagDataLoader implements ApplicationRunner {
 
 	@Override
 	public void run(ApplicationArguments args) throws Exception {
+		// 获取RedisVectorStore实例
 		RedisVectorStore redisVectorStore = (RedisVectorStore) vectorStore;
+		// 获取索引信息
 		Map<String, Object> indexInfo = redisVectorStore.getJedis().ftInfo(indexName);
+		// 获取索引中的文档数量
 		int numDocs = Integer.parseInt(String.valueOf(indexInfo.getOrDefault("num_docs", "0")));
+		// 如果文档数量大于20000，则跳过
 		if (numDocs > 20000) {
 			logger.info("Embeddings already loaded. Skipping");
 			return;
 		}
+		// 获取数据资源
 		Resource file = data;
+		// 如果数据资源是.gz格式，则解压
 		if (data.getFilename() != null && data.getFilename().endsWith(".gz")) {
 			GZIPInputStream inputStream = new GZIPInputStream(data.getInputStream());
 			file = new InputStreamResource(inputStream, "beers.json.gz");
