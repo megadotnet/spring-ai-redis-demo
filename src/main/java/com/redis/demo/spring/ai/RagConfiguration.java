@@ -14,6 +14,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import redis.clients.jedis.DefaultJedisClientConfig;
+import redis.clients.jedis.JedisClientConfig;
+import redis.clients.jedis.HostAndPort;
+import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
+import redis.clients.jedis.Connection;
 import redis.clients.jedis.JedisPooled;
 
 import java.time.Duration;
@@ -33,8 +38,12 @@ public class RagConfiguration {
     @Value("${spring.data.redis.port}")
     private int redisPort;
 
+    @Value("${spring.data.redis.password:}")
+    private String redisPassword;
+
     @Value("${spring.ai.vectorstore.redis.initialize-schema}")
     private boolean initializeSchema;
+
 
     private final RedisConnectionFactory redisConnectionFactory;
 
@@ -44,7 +53,16 @@ public class RagConfiguration {
 
     @Bean
     public JedisPooled jedisPooled() {
-        return new JedisPooled(redisHost, redisPort);
+        HostAndPort hostAndPort = new HostAndPort(redisHost, redisPort);
+        
+        if (redisPassword != null && !redisPassword.isEmpty()) {
+            JedisClientConfig clientConfig = DefaultJedisClientConfig.builder()
+                    .password(redisPassword)
+                    .build();
+            return new JedisPooled(hostAndPort, clientConfig);
+        } else {
+            return new JedisPooled(hostAndPort);
+        }
     }
 
     @Bean
