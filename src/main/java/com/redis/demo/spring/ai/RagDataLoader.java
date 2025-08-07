@@ -1,25 +1,31 @@
 package com.redis.demo.spring.ai;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.net.URLConnection;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
-import java.io.IOException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.JsonReader;
 import org.springframework.ai.vectorstore.VectorStore;
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Component;
 
 @Component
 public class RagDataLoader implements ApplicationRunner {
 
+	public static final String DATA_BEERS_JSON_GZ = "https://gh.llkk.cc/https://github.com/megadotnet/spring-ai-redis-demo/raw/refs/heads/main/src/main/resources/data/beers.json.gz";
 	private static final Logger logger = LoggerFactory.getLogger(RagDataLoader.class);
 
 	// 定义关键字数组
@@ -48,6 +54,15 @@ public class RagDataLoader implements ApplicationRunner {
 
 	@Override
 	public void run(ApplicationArguments args) throws Exception {
+
+		// 获取数据资源
+		Resource file = data;
+
+		if (!file.exists()) {
+			logger.info("Local data file not found, downloading from URL...");
+			file = downloadDataFile();
+		}
+
 		// 检查文档数量，如果已有足够数据则跳过加载
 		try {
 			int numDocs = documentCountProvider.getDocumentCount(indexName);
@@ -60,11 +75,10 @@ public class RagDataLoader implements ApplicationRunner {
 			logger.warn("Document count check not supported for current VectorStore implementation: {}", e.getMessage());
 			logger.info("Proceeding with data loading without document count check");
 		}
-		// 获取数据资源
-		Resource file = data;
+
 		// 如果数据资源是.gz格式，则解压
-		if (data.getFilename() != null && data.getFilename().endsWith(".gz")) {
-			GZIPInputStream inputStream = new GZIPInputStream(data.getInputStream());
+		if (file.getFilename() != null && file.getFilename().endsWith(".gz")) {
+			GZIPInputStream inputStream = new GZIPInputStream(file.getInputStream());
 			file = new InputStreamResource(inputStream, "beers.json.gz");
 		}
 		logger.info("Creating Embeddings...");
@@ -83,6 +97,23 @@ public class RagDataLoader implements ApplicationRunner {
 		}
 		// end::loader[]
 		logger.info("Embeddings created.");
+	}
+
+	private Resource downloadDataFile() throws IOException {
+		Path tempFile = Files.createTempFile("beers-", ".json.gz");
+		logger.info("Downloading data file from: {} to: {}", DATA_BEERS_JSON_GZ, tempFile);
+
+		URL downloadUrl = new URL(DATA_BEERS_JSON_GZ);
+		URLConnection connection = downloadUrl.openConnection();
+		connection.setConnectTimeout(10000); // 10s
+		connection.setReadTimeout(60000); // 60s
+
+		try (InputStream in = connection.getInputStream()) {
+			Files.copy(in, tempFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		}
+
+		logger.info("Data file downloaded successfully.");
+		return new UrlResource(tempFile.toUri());
 	}
 
 }

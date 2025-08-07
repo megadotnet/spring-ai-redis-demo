@@ -48,11 +48,6 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>com.microsoft.onnxruntime</groupId>
-            <artifactId>onnxruntime_gpu</artifactId>
-            <version>1.19.0</version> <!-- 与 CUDA 版本匹配 -->
-        </dependency>
         
         <!-- TestContainers 用于集成测试 -->
         <dependency>

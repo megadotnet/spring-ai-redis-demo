@@ -129,6 +129,7 @@ class RagDataLoaderTest {
     void shouldThrowExceptionWhenFileReadFails() throws Exception {
         // Given
         when(documentCountProvider.getDocumentCount(INDEX_NAME)).thenReturn(1000);
+        when(dataResource.exists()).thenReturn(true);
         when(dataResource.getFilename()).thenReturn("beers.json");
         when(dataResource.getInputStream()).thenThrow(new IOException("文件读取失败"));
 
@@ -220,6 +221,7 @@ class RagDataLoaderTest {
      * 设置数据资源Mock对象
      */
     private void setupDataResourceMock(boolean isGzipFile, Object data) throws IOException {
+        when(dataResource.exists()).thenReturn(true);
         String filename = isGzipFile ? "beers.json.gz" : "beers.json";
         when(dataResource.getFilename()).thenReturn(filename);
         
@@ -245,4 +247,5 @@ class RagDataLoaderTest {
         }
         return baos.toByteArray();
     }
+
 }
