@@ -72,7 +72,16 @@ public class RagConfiguration {
     }
 
     @Bean
-    VectorStore vectorStore(EmbeddingModel embeddingModel) {
+    /**
+     * Creates and configures a {@link VectorStore} bean that uses Redis as the backend.
+     * This vector store is essential for the RAG pattern, as it stores the document embeddings
+     * and allows for efficient similarity searches.
+     *
+     * @param embeddingModel The {@link EmbeddingModel} to use for creating vector embeddings from text.
+     *                       Spring will inject this dependency.
+     * @return A fully configured {@link RedisVectorStore} instance, ready to be used by the application.
+     */
+    public VectorStore vectorStore(EmbeddingModel embeddingModel) {
         return RedisVectorStore.builder(jedisPooled(), embeddingModel)
                 .indexName(indexName)
                 .prefix(vectorStorePrefix)
