@@ -90,6 +90,7 @@ public class RagConfiguration {
     }
 
 
+    /// 定义一个RagService的Bean
     @Bean
     public RagService ragService(ChatModel chatModel, VectorStore vectorStore) {
         return new RagService(chatModel, vectorStore);
