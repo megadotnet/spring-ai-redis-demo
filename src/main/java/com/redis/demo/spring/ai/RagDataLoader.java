@@ -51,7 +51,8 @@ public class RagDataLoader implements ApplicationRunner {
 		this.documentCountProvider = documentCountProvider;
 	}
 
-
+	// 在RagDataLoader类中添加批次大小常量
+	private static final int BATCH_SIZE = 1000;
 	@Override
 	public void run(ApplicationArguments args) throws Exception {
 
@@ -88,7 +89,15 @@ public class RagDataLoader implements ApplicationRunner {
 			JsonReader loader = new JsonReader(file, KEYS);
 			// Use the autowired VectorStore to insert the documents into Redis
 			List<Document> documentList = loader.get();
-			vectorStore.add(documentList);
+
+			// 分批处理文档
+			for (int i = 0; i < documentList.size(); i += BATCH_SIZE) {
+				int endIndex = Math.min(i + BATCH_SIZE, documentList.size());
+				List<Document> batch = documentList.subList(i, endIndex);
+				vectorStore.add(batch);
+				logger.info("Processed batch {}/{}", (i / BATCH_SIZE) + 1,
+						(documentList.size() + BATCH_SIZE - 1) / BATCH_SIZE);
+			}
 		} catch (RuntimeException e) {
 			if (e.getCause() instanceof IOException) {
 				throw (IOException) e.getCause();

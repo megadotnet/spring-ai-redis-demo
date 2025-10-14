@@ -1,6 +1,7 @@
 package com.redis.demo.spring.ai;
 
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
@@ -26,23 +27,9 @@ import java.time.Duration;
 @Configuration
 public class RagConfiguration {
 
-    @Value("${spring.ai.vectorstore.redis.index}")
+    @Value("${spring.ai.vectorstore.pinecone.index-name}")
     private String indexName;
-
-    @Value("${spring.ai.vectorstore.redis.prefix}")
-    private String vectorStorePrefix;
-
-    @Value("${spring.data.redis.host}")
-    private String redisHost;
-
-    @Value("${spring.data.redis.port}")
-    private int redisPort;
-
-    @Value("${spring.data.redis.password:}")
-    private String redisPassword;
-
-    @Value("${spring.ai.vectorstore.redis.initialize-schema}")
-    private boolean initializeSchema;
+    
 
 
     private final RedisConnectionFactory redisConnectionFactory;
@@ -51,43 +38,6 @@ public class RagConfiguration {
         this.redisConnectionFactory = redisConnectionFactory;
     }
 
-    @Bean
-    // 定义一个名为jedisPooled的Bean
-    public JedisPooled jedisPooled() {
-        // 创建一个HostAndPort对象，用于存储Redis的主机和端口
-        HostAndPort hostAndPort = new HostAndPort(redisHost, redisPort);
-        
-        // 判断Redis的密码是否为空
-        if (redisPassword != null && !redisPassword.isEmpty()) {
-            // 如果不为空，创建一个JedisClientConfig对象，用于存储Redis的密码
-            JedisClientConfig clientConfig = DefaultJedisClientConfig.builder()
-                    .password(redisPassword)
-                    .build();
-            // 返回一个带有密码的JedisPooled对象
-            return new JedisPooled(hostAndPort, clientConfig);
-        } else {
-            // 如果为空，返回一个不带密码的JedisPooled对象
-            return new JedisPooled(hostAndPort);
-        }
-    }
-
-    @Bean
-    /**
-     * Creates and configures a {@link VectorStore} bean that uses Redis as the backend.
-     * This vector store is essential for the RAG pattern, as it stores the document embeddings
-     * and allows for efficient similarity searches.
-     *
-     * @param embeddingModel The {@link EmbeddingModel} to use for creating vector embeddings from text.
-     *                       Spring will inject this dependency.
-     * @return A fully configured {@link RedisVectorStore} instance, ready to be used by the application.
-     */
-    public VectorStore vectorStore(EmbeddingModel embeddingModel) {
-        return RedisVectorStore.builder(jedisPooled(), embeddingModel)
-                .indexName(indexName)
-                .prefix(vectorStorePrefix)
-                .initializeSchema(initializeSchema)
-                .build();
-    }
 
 
     /// 定义一个RagService的Bean
