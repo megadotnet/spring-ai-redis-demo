@@ -36,7 +36,7 @@ public class RagDataLoader implements ApplicationRunner {
 	private Resource data;
 
 	// 获取索引名称
-	@Value("${spring.ai.vectorstore.redis.index}")
+	@Value("${spring.ai.vectorstore.pinecone.index-name}")
 	private String indexName;
 
 	// 定义VectorStore实例

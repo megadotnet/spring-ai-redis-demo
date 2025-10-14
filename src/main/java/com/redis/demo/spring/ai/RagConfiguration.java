@@ -1,5 +1,6 @@
 package com.redis.demo.spring.ai;
 
+import io.pinecone.clients.Pinecone;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -29,8 +30,11 @@ public class RagConfiguration {
 
     @Value("${spring.ai.vectorstore.pinecone.index-name}")
     private String indexName;
-    
 
+    @Bean
+    public Pinecone pineconeClient(@Value("${spring.ai.vectorstore.pinecone.apiKey}") String apiKey) {
+        return new Pinecone.Builder(apiKey).build();
+    }
 
     private final RedisConnectionFactory redisConnectionFactory;
 

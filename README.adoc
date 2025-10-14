@@ -32,6 +32,14 @@ export SPRING_AI_OPENAI_ENDPOINT=<INSERT ENDPOINT URL HERE>
 export SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL=<INSERT MODEL NAME HERE>
 ----
 
+=== PINECONE_APIKEY
+IntelliJ IDEA
+Run → Edit Configurations
+选择你的运行配置
+在"Environment variables"中添加：
+Name: SPRING_AI_VECTORSTORE_PINECONE_APIKEY
+Value: 你的API密钥
+
 == Run the demo
 
 [source,console]

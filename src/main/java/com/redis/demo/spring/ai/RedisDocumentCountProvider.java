@@ -4,7 +4,7 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.redis.RedisVectorStore;
-import org.springframework.stereotype.Component;
+
 
 import java.util.List;
 import java.util.Map;
@@ -12,7 +12,6 @@ import java.util.Map;
 /**
  * Redis VectorStore的文档数量提供者实现
  */
-@Component
 public class RedisDocumentCountProvider implements DocumentCountProvider {
     
     private final VectorStore vectorStore;
