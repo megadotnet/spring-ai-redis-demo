@@ -7,6 +7,7 @@ import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 
 import org.slf4j.Logger;
@@ -52,7 +53,54 @@ public class RagDataLoader implements ApplicationRunner {
 	}
 
 	// 在RagDataLoader类中添加批次大小常量
-	private static final int BATCH_SIZE = 1000;
+	private static final int BATCH_SIZE = 8;
+
+	// 在 RagDataLoader 类中添加文本处理方法
+// 在 RagDataLoader 类中添加以下方法
+	private static final int MAX_TOKENS = 512;
+	private static final int CHARS_PER_TOKEN_ESTIMATE = 4;
+
+	// 添加处理文档内容的方法
+	private Document processDocumentContent(Document document) {
+		String content = document.toString();
+		int originalLength = content.length();
+
+		String processedContent = truncateTextByTokens(content);
+
+		if (!processedContent.equals(content)) {
+			logger.info("Document truncated from {} to {} characters", originalLength, processedContent.length());
+			return new Document(processedContent, document.getMetadata());
+		}
+
+		return document;
+	}
+
+
+	private String truncateTextByTokens(String text) {
+		// 更保守的限制 - 使用更低的字符到token比率
+		int maxChars = 1500; // 大约375 tokens (基于1:4比率)
+
+		if (text.length() > maxChars) {
+			String truncatedText = text.substring(0, maxChars);
+			// 在句子边界截断
+			int lastPeriod = truncatedText.lastIndexOf('.');
+			int lastSpace = truncatedText.lastIndexOf(' ');
+
+			// 优先在句号后截断，其次在空格处截断
+			if (lastPeriod > 0) {
+				truncatedText = truncatedText.substring(0, lastPeriod + 1);
+			} else if (lastSpace > 0) {
+				truncatedText = truncatedText.substring(0, lastSpace);
+			}
+
+			logger.debug("Truncated text from {} to {} characters", text.length(), truncatedText.length());
+			return truncatedText;
+		}
+		return text;
+	}
+
+
+
 	@Override
 	public void run(ApplicationArguments args) throws Exception {
 
@@ -83,20 +131,24 @@ public class RagDataLoader implements ApplicationRunner {
 			file = new InputStreamResource(inputStream, "beers.json.gz");
 		}
 		logger.info("Creating Embeddings...");
-		// tag::loader[]
 		try {
 			// Create a JSON reader with fields relevant to our use case
 			JsonReader loader = new JsonReader(file, KEYS);
 			// Use the autowired VectorStore to insert the documents into Redis
 			List<Document> documentList = loader.get();
 
+			// 对文档进行预处理，确保token数量符合要求
+			List<Document> processedDocuments = documentList.stream()
+					.map(this::processDocumentContent)
+					.collect(Collectors.toList());
+
 			// 分批处理文档
-			for (int i = 0; i < documentList.size(); i += BATCH_SIZE) {
-				int endIndex = Math.min(i + BATCH_SIZE, documentList.size());
-				List<Document> batch = documentList.subList(i, endIndex);
+			for (int i = 0; i < processedDocuments.size(); i += BATCH_SIZE) {
+				int endIndex = Math.min(i + BATCH_SIZE, processedDocuments.size());
+				List<Document> batch = processedDocuments.subList(i, endIndex);
 				vectorStore.add(batch);
 				logger.info("Processed batch {}/{}", (i / BATCH_SIZE) + 1,
-						(documentList.size() + BATCH_SIZE - 1) / BATCH_SIZE);
+						(processedDocuments.size() + BATCH_SIZE - 1) / BATCH_SIZE);
 			}
 		} catch (RuntimeException e) {
 			if (e.getCause() instanceof IOException) {
