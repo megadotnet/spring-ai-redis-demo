@@ -6,10 +6,15 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
@@ -53,7 +58,7 @@ public class RagDataLoader implements ApplicationRunner {
 	}
 
 	// 在RagDataLoader类中添加批次大小常量
-	private static final int BATCH_SIZE = 8;
+	private static final int BATCH_SIZE = 32;
 
 	// 在 RagDataLoader 类中添加文本处理方法
 // 在 RagDataLoader 类中添加以下方法
@@ -131,11 +136,22 @@ public class RagDataLoader implements ApplicationRunner {
 			file = new InputStreamResource(inputStream, "beers.json.gz");
 		}
 		logger.info("Creating Embeddings...");
+// 替换 JsonReader 处理逻辑
 		try {
-			// Create a JSON reader with fields relevant to our use case
-			JsonReader loader = new JsonReader(file, KEYS);
-			// Use the autowired VectorStore to insert the documents into Redis
-			List<Document> documentList = loader.get();
+			// 读取原始 JSON 数据
+			ObjectMapper objectMapper = new ObjectMapper();
+			JsonNode jsonNode = objectMapper.readTree(file.getInputStream());
+
+			List<Document> documentList = new ArrayList<>();
+
+			if (jsonNode.isArray()) {
+				for (JsonNode node : jsonNode) {
+					String content = buildContentFromJsonNode(node);
+					Map<String, Object> metadata = buildMetadataFromJsonNode(node);
+					Document document = new Document(content, metadata);
+					documentList.add(document);
+				}
+			}
 
 			// 对文档进行预处理，确保token数量符合要求
 			List<Document> processedDocuments = documentList.stream()
@@ -150,7 +166,8 @@ public class RagDataLoader implements ApplicationRunner {
 				logger.info("Processed batch {}/{}", (i / BATCH_SIZE) + 1,
 						(processedDocuments.size() + BATCH_SIZE - 1) / BATCH_SIZE);
 			}
-		} catch (RuntimeException e) {
+		}
+		catch (RuntimeException e) {
 			if (e.getCause() instanceof IOException) {
 				throw (IOException) e.getCause();
 			}
@@ -159,6 +176,35 @@ public class RagDataLoader implements ApplicationRunner {
 		// end::loader[]
 		logger.info("Embeddings created.");
 	}
+
+	private String buildContentFromJsonNode(JsonNode node) {
+		StringBuilder content = new StringBuilder();
+
+		for (String key : KEYS) {
+			if (node.has(key) && !node.get(key).isNull()) {
+				String value = node.get(key).asText();
+				// 限制每个字段的长度
+				if (value.length() > 500) {
+					value = value.substring(0, 500);
+				}
+				content.append(key).append(": ").append(value).append("\n");
+			}
+		}
+
+		return content.toString();
+	}
+
+	private Map<String, Object> buildMetadataFromJsonNode(JsonNode node) {
+		Map<String, Object> metadata = new HashMap<>();
+
+		// 可以添加额外的元数据字段
+		if (node.has("name")) {
+			metadata.put("name", node.get("name").asText());
+		}
+
+		return metadata;
+	}
+
 
 	private Resource downloadDataFile() throws IOException {
 		Path tempFile = Files.createTempFile("beers-", ".json.gz");
