@@ -23,6 +23,12 @@ import redis.clients.jedis.JedisPooled;
 
 import java.time.Duration;
 
+/**
+ * 应用的核心配置类，负责：
+ * - 创建 Redis 连接客户端（JedisPooled）
+ * - 配置向量存储（RedisVectorStore）
+ * - 暴露业务服务 {@link RagService}
+ */
 @Configuration
 public class RagConfiguration {
 
@@ -47,12 +53,24 @@ public class RagConfiguration {
 
     private final RedisConnectionFactory redisConnectionFactory;
 
+    /**
+     * 注入 Redis 连接工厂。
+     *
+     * @param redisConnectionFactory 连接工厂
+     */
     public RagConfiguration(RedisConnectionFactory redisConnectionFactory) {
         this.redisConnectionFactory = redisConnectionFactory;
     }
 
     @Bean
     // 定义一个名为jedisPooled的Bean
+    /**
+     * 创建 JedisPooled 客户端。
+     *
+     * 当配置了密码时，使用带密码的客户端；否则使用无密码连接。
+     *
+     * @return Redis 客户端
+     */
     public JedisPooled jedisPooled() {
         // 创建一个HostAndPort对象，用于存储Redis的主机和端口
         HostAndPort hostAndPort = new HostAndPort(redisHost, redisPort);
@@ -72,6 +90,12 @@ public class RagConfiguration {
     }
 
     @Bean
+    /**
+     * 配置向量存储，基于 Redis 作为底层存储。
+     *
+     * @param embeddingModel 向量嵌入模型
+     * @return 向量存储实现
+     */
     VectorStore vectorStore(EmbeddingModel embeddingModel) {
         return RedisVectorStore.builder(jedisPooled(), embeddingModel)
                 .indexName(indexName)
@@ -82,6 +106,13 @@ public class RagConfiguration {
 
 
     @Bean
+    /**
+     * 暴露 RAG 业务服务 Bean。
+     *
+     * @param chatModel 聊天模型
+     * @param vectorStore 向量存储
+     * @return RAG 服务
+     */
     public RagService ragService(ChatModel chatModel, VectorStore vectorStore) {
         return new RagService(chatModel, vectorStore);
     }
