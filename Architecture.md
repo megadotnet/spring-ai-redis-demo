@@ -2,7 +2,7 @@
 
 ## 1. 框架全景图
 
-这是一个基于 Spring Boot 3.2.3 的检索增强生成（RAG）演示应用，结合了 Redis Vector Search 和大语言模型（LLM）来实现基于知识库的问答系统。该应用使用前后端分离架构，前端采用 React 实现用户界面，后端基于 Spring AI 框架集成 Redis 和 LLM 服务。
+这是一个基于 Spring Boot 3.2.3 的检索增强生成（RAG）演示应用，结合了 Milvus Vector Database 和大语言模型（LLM）来实现基于知识库的问答系统。该应用使用前后端分离架构，前端采用 React 实现用户界面，后端基于 Spring AI 框架集成 Milvus 和 LLM 服务。
 
 ### 项目结构
 
@@ -74,7 +74,7 @@ spring-ai-redis-demo/
 ### 关键技术点
 
 1. **向量搜索**：
-   - 使用 Redis Vector Search 进行相似性搜索
+   - 使用 Milvus Vector Database 进行相似性搜索
    - 支持 Top-K 查询返回最相关的文档
 
 2. **嵌入生成**：
@@ -91,7 +91,7 @@ spring-ai-redis-demo/
 
 1. **RagConfiguration**：
    - 配置 TransformersEmbeddingClient 用于生成嵌入
-   - 配置 RedisVectorStore 用于向量存储和检索
+   - 配置 MilvusVectorStore 用于向量存储和检索
    - 配置 RagService 并注入依赖
 
 2. **RagService**：
@@ -129,7 +129,7 @@ spring-ai-redis-demo/
 ### 最佳实践
 
 1. **向量存储优化**：
-   - 使用 Redis Vector Search 提供高效的向量检索
+   - 使用 Milvus Vector Database 提供高效的向量检索
    - 预先生成并缓存向量嵌入以提高性能
 
 2. **提示工程**：
@@ -147,7 +147,7 @@ spring-ai-redis-demo/
    - 在应用启动时预处理数据
 
 2. **向量检索**：
-   - 利用 Redis 的高性能向量搜索能力
+   - 利用 Milvus 的高性能向量搜索能力
    - 通过 Top-K 参数控制检索结果数量
 
 ## 6. 生态系统报告
@@ -214,7 +214,7 @@ spring-ai-redis-demo/
 | 技术点 | 选型 | 替代方案 | 选型理由 |
 |--------|------|----------|----------|
 | 后端框架 | Spring Boot + Spring AI | FastAPI + LangChain | Spring 生态丰富，企业级支持好 |
-| 向量数据库 | Redis Vector Search | Pinecone, Weaviate, Chroma | 本地部署简单，性能优秀 |
+| 向量数据库 | Milvus Vector Database | Pinecone, Weaviate, Chroma | 本地部署简单，性能优秀 |
 | 嵌入模型 | Transformers (all-MiniLM-L6-v2) | OpenAI Embeddings | 本地运行，无需 API 调用 |
 | 前端框架 | React | Vue, Angular | 生态丰富，组件化架构 |
 | LLM | DeepSeek (通过 SiliconFlow) | OpenAI, Claude, Llama | 成本较低，中文支持好 |
@@ -222,6 +222,6 @@ spring-ai-redis-demo/
 
 ## 总结
 
-该 Spring AI Redis Demo 项目展示了如何使用现代技术栈构建一个完整的检索增强生成（RAG）应用。通过结合 Redis Vector Search 的高效向量检索能力和大语言模型的理解能力，实现了基于知识库的智能问答系统。
+该 Spring AI Milvus Demo 项目展示了如何使用现代技术栈构建一个完整的检索增强生成（RAG）应用。通过结合 Milvus Vector Database 的高效向量检索能力和大语言模型的理解能力，实现了基于知识库的智能问答系统。
 
 项目架构清晰，代码质量良好，遵循了现代软件开发的最佳实践。虽然 Spring AI 框架仍在快速发展中，但它已经能够提供构建 AI 应用所需的核心功能。对于希望了解和实践 RAG 技术的开发者来说，这是一个很好的学习和参考示例。

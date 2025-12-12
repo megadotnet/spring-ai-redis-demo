@@ -1,6 +1,8 @@
 package com.redis.demo.spring.ai;
 
 import io.micrometer.observation.ObservationRegistry;
+import io.milvus.client.MilvusServiceClient;
+import io.milvus.param.ConnectParam;
 import io.pinecone.clients.Pinecone;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.ollama.OllamaChatModel;
@@ -11,18 +13,11 @@ import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.ollama.management.ModelManagementOptions;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.redis.RedisVectorStore;
+import org.springframework.ai.vectorstore.milvus.MilvusVectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
-import redis.clients.jedis.DefaultJedisClientConfig;
-import redis.clients.jedis.JedisClientConfig;
-import redis.clients.jedis.HostAndPort;
-import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
-import redis.clients.jedis.Connection;
-import redis.clients.jedis.JedisPooled;
 
 import java.time.Duration;
 
@@ -37,12 +32,6 @@ public class RagConfiguration {
         return new Pinecone.Builder(apiKey).build();
     }
 
-    private final RedisConnectionFactory redisConnectionFactory;
-
-    public RagConfiguration(RedisConnectionFactory redisConnectionFactory) {
-        this.redisConnectionFactory = redisConnectionFactory;
-    }
-
     @Bean
     public EmbeddingModel embeddingModel(
             @Value("${spring.ai.ollama.base-url}") String baseUrl,
@@ -52,6 +41,23 @@ public class RagConfiguration {
                 OllamaOptions.builder().model(model).build(),
                 ObservationRegistry.create(),
                 ModelManagementOptions.builder().timeout(Duration.ofSeconds(30)).build());
+    }
+
+    @Bean
+    public VectorStore milvusVectorStore(@Value("${spring.ai.vectorstore.milvus.client.host}") String host,
+                                        @Value("${spring.ai.vectorstore.milvus.collection-name}") String collectionName,
+                                        EmbeddingModel embeddingModel) {
+        ConnectParam connectParam = ConnectParam.newBuilder()
+                .withHost(host)
+                .withPort(19530)
+                .withConnectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .withKeepAliveTime(30, java.util.concurrent.TimeUnit.SECONDS)
+                .withKeepAliveTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .withIdleTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .build();
+                
+        MilvusServiceClient client = new MilvusServiceClient(connectParam);
+        return MilvusVectorStore.builder(client, embeddingModel).build();
     }
 
     /// 定义一个RagService的Bean

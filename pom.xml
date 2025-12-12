@@ -13,7 +13,7 @@
     <artifactId>spring-ai-redis-demo</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>spring-ai-redis-demo</name>
-    <description>Simple AI application using Redis vector search</description>
+    <description>Simple AI application using Milvus vector search</description>
     <properties>
         <java.version>17</java.version>
         <spring-ai.version>1.0.0</spring-ai.version>
@@ -33,12 +33,9 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-vector-store-redis</artifactId>
+            <artifactId>spring-ai-starter-vector-store-milvus</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
-        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -49,7 +46,7 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-vector-store-pinecone</artifactId>
         </dependency>
-        
+
         <!-- TestContainers 用于集成测试 -->
         <dependency>
             <groupId>org.testcontainers</groupId>
