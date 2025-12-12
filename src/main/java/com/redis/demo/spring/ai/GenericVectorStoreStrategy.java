@@ -6,7 +6,6 @@ import org.springframework.stereotype.Component;
 /**
  * 通用VectorStore策略实现
  */
-@Component
 public class GenericVectorStoreStrategy implements VectorStoreStrategy {
     
     @Override

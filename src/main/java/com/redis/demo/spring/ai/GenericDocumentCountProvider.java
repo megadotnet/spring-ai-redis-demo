@@ -3,6 +3,7 @@ package com.redis.demo.spring.ai;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 
@@ -10,6 +11,7 @@ import java.util.List;
  * 通用文档数量提供者实现
  * 通过相似性搜索来估算文档数量
  */
+@Component
 public class GenericDocumentCountProvider implements DocumentCountProvider {
     
     private final VectorStore vectorStore;
