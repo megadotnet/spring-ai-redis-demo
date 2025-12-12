@@ -44,10 +44,14 @@ public class RagConfiguration {
     }
 
     @Bean
-    public EmbeddingModel embeddingModel() {
-        OllamaApi ollamaApi =   OllamaApi.builder().baseUrl("http://127.0.0.1:11434").build();
-        return new OllamaEmbeddingModel(ollamaApi,OllamaOptions.builder().model("bge-m3").build()
-                , ObservationRegistry.create(), ModelManagementOptions.builder().timeout(Duration.ofSeconds(30)).build());
+    public EmbeddingModel embeddingModel(
+            @Value("${spring.ai.ollama.base-url}") String baseUrl,
+            @Value("${spring.ai.ollama.embedding.options.model}") String model) {
+        OllamaApi ollamaApi = OllamaApi.builder().baseUrl(baseUrl).build();
+        return new OllamaEmbeddingModel(ollamaApi, 
+                OllamaOptions.builder().model(model).build(),
+                ObservationRegistry.create(),
+                ModelManagementOptions.builder().timeout(Duration.ofSeconds(30)).build());
     }
 
     /// 定义一个RagService的Bean
