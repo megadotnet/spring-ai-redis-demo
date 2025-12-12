@@ -1,14 +1,15 @@
 package com.redis.demo.spring.ai;
 
+import io.micrometer.observation.ObservationRegistry;
 import io.pinecone.clients.Pinecone;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.openai.OpenAiEmbeddingModel;
-import org.springframework.ai.openai.api.OpenAiApi;
-import org.springframework.ai.openai.OpenAiChatModel;
-import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.ollama.OllamaChatModel;
+import org.springframework.ai.ollama.OllamaEmbeddingModel;
+import org.springframework.ai.ollama.api.OllamaApi;
+import org.springframework.ai.ollama.api.OllamaOptions;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.transformers.TransformersEmbeddingModel;
+import org.springframework.ai.ollama.management.ModelManagementOptions;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.redis.RedisVectorStore;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,7 +43,12 @@ public class RagConfiguration {
         this.redisConnectionFactory = redisConnectionFactory;
     }
 
-
+    @Bean
+    public EmbeddingModel embeddingModel() {
+        OllamaApi ollamaApi =   OllamaApi.builder().baseUrl("http://127.0.0.1:11434").build();
+        return new OllamaEmbeddingModel(ollamaApi,OllamaOptions.builder().model("bge-m3").build()
+                , ObservationRegistry.create(), ModelManagementOptions.builder().timeout(Duration.ofSeconds(30)).build());
+    }
 
     /// 定义一个RagService的Bean
     @Bean
