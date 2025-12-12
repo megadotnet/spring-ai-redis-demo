@@ -51,7 +51,9 @@ public class RagConfiguration {
                 .build();
                 
         MilvusServiceClient client = new MilvusServiceClient(connectParam);
-        return MilvusVectorStore.builder(client, embeddingModel).build();
+        return MilvusVectorStore.builder(client, embeddingModel)
+                .collectionName(collectionName)
+                .build();
     }
 
     /// 定义一个RagService的Bean

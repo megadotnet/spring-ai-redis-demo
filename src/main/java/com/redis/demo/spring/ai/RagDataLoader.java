@@ -136,44 +136,13 @@ public class RagDataLoader implements ApplicationRunner {
 			file = new InputStreamResource(inputStream, "beers.json.gz");
 		}
 		logger.info("Creating Embeddings...");
-// 替换 JsonReader 处理逻辑
-		try {
-			// 读取原始 JSON 数据
-			ObjectMapper objectMapper = new ObjectMapper();
-			JsonNode jsonNode = objectMapper.readTree(file.getInputStream());
 
-			List<Document> documentList = new ArrayList<>();
+		// Create a JSON reader with fields relevant to our use case
+		JsonReader loader = new JsonReader(file, KEYS);
+		// Use the autowired VectorStore to insert the documents into Redis
+		vectorStore.add(loader.get());
 
-			if (jsonNode.isArray()) {
-				for (JsonNode node : jsonNode) {
-					String content = buildContentFromJsonNode(node);
-					Map<String, Object> metadata = buildMetadataFromJsonNode(node);
-					Document document = new Document(content, metadata);
-					documentList.add(document);
-				}
-			}
 
-			// 对文档进行预处理，确保token数量符合要求
-			List<Document> processedDocuments = documentList.stream()
-					.map(this::processDocumentContent)
-					.collect(Collectors.toList());
-
-			// 分批处理文档
-			for (int i = 0; i < processedDocuments.size(); i += BATCH_SIZE) {
-				int endIndex = Math.min(i + BATCH_SIZE, processedDocuments.size());
-				List<Document> batch = processedDocuments.subList(i, endIndex);
-				vectorStore.add(batch);
-				logger.info("Processed batch {}/{}", (i / BATCH_SIZE) + 1,
-						(processedDocuments.size() + BATCH_SIZE - 1) / BATCH_SIZE);
-			}
-		}
-		catch (RuntimeException e) {
-			if (e.getCause() instanceof IOException) {
-				throw (IOException) e.getCause();
-			}
-			throw e;
-		}
-		// end::loader[]
 		logger.info("Embeddings created.");
 	}
 
