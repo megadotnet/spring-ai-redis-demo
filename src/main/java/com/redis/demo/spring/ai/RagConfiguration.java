@@ -3,7 +3,6 @@ package com.redis.demo.spring.ai;
 import io.micrometer.observation.ObservationRegistry;
 import io.milvus.client.MilvusServiceClient;
 import io.milvus.param.ConnectParam;
-import io.pinecone.clients.Pinecone;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.OllamaEmbeddingModel;
@@ -26,12 +25,7 @@ public class RagConfiguration {
 
     @Value("${spring.ai.vectorstore.pinecone.index-name}")
     private String indexName;
-
-    @Bean
-    public Pinecone pineconeClient(@Value("${spring.ai.vectorstore.pinecone.apiKey}") String apiKey) {
-        return new Pinecone.Builder(apiKey).build();
-    }
-
+    
     @Bean
     public EmbeddingModel embeddingModel(
             @Value("${spring.ai.ollama.base-url}") String baseUrl,

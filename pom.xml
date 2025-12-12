@@ -43,11 +43,6 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-vector-store-pinecone</artifactId>
-        </dependency>
         
         <!-- 显式添加 protobuf 依赖解决版本冲突 -->
         <dependency>

@@ -197,6 +197,17 @@ public class RagDataLoader implements ApplicationRunner {
 	private Map<String, Object> buildMetadataFromJsonNode(JsonNode node) {
 		Map<String, Object> metadata = new HashMap<>();
 
+		// 添加 id 字段以满足 Milvus 的要求
+		if (node.has("id")) {
+			metadata.put("id", node.get("id").asText());
+		} else if (node.has("name")) {
+			// 如果没有显式的 id，使用 name 字段作为 id
+			metadata.put("id", node.get("name").asText());
+		} else {
+			// 如果既没有 id 也没有 name，生成一个 UUID 作为 id
+			metadata.put("id", java.util.UUID.randomUUID().toString());
+		}
+
 		// 可以添加额外的元数据字段
 		if (node.has("name")) {
 			metadata.put("name", node.get("name").asText());
