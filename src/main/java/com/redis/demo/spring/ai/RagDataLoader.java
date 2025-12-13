@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 
@@ -67,17 +68,26 @@ public class RagDataLoader implements ApplicationRunner {
 
 	// 添加处理文档内容的方法
 	private Document processDocumentContent(Document document) {
-		String content = document.toString();
+		String content = document.getFormattedContent();
 		int originalLength = content.length();
 
 		String processedContent = truncateTextByTokens(content);
 
 		if (!processedContent.equals(content)) {
 			logger.info("Document truncated from {} to {} characters", originalLength, processedContent.length());
-			return new Document(processedContent, document.getMetadata());
 		}
-
-		return document;
+		
+		// 确保文档有ID
+		Map<String, Object> metadata = new HashMap<>(document.getMetadata());
+		if (!metadata.containsKey("id")) {
+			if (metadata.containsKey("name")) {
+				metadata.put("id", metadata.get("name"));
+			} else {
+				metadata.put("id", UUID.randomUUID().toString());
+			}
+		}
+		
+		return new Document(processedContent, metadata);
 	}
 
 
@@ -139,51 +149,14 @@ public class RagDataLoader implements ApplicationRunner {
 
 		// Create a JSON reader with fields relevant to our use case
 		JsonReader loader = new JsonReader(file, KEYS);
-		// Use the autowired VectorStore to insert the documents into Redis
-		vectorStore.add(loader.get());
+		List<Document> documents = loader.get();
+		vectorStore.add(documents);
 
 
 		logger.info("Embeddings created.");
 	}
 
-	private String buildContentFromJsonNode(JsonNode node) {
-		StringBuilder content = new StringBuilder();
 
-		for (String key : KEYS) {
-			if (node.has(key) && !node.get(key).isNull()) {
-				String value = node.get(key).asText();
-				// 限制每个字段的长度
-				if (value.length() > 500) {
-					value = value.substring(0, 500);
-				}
-				content.append(key).append(": ").append(value).append("\n");
-			}
-		}
-
-		return content.toString();
-	}
-
-	private Map<String, Object> buildMetadataFromJsonNode(JsonNode node) {
-		Map<String, Object> metadata = new HashMap<>();
-
-		// 添加 id 字段以满足 Milvus 的要求
-		if (node.has("id")) {
-			metadata.put("id", node.get("id").asText());
-		} else if (node.has("name")) {
-			// 如果没有显式的 id，使用 name 字段作为 id
-			metadata.put("id", node.get("name").asText());
-		} else {
-			// 如果既没有 id 也没有 name，生成一个 UUID 作为 id
-			metadata.put("id", java.util.UUID.randomUUID().toString());
-		}
-
-		// 可以添加额外的元数据字段
-		if (node.has("name")) {
-			metadata.put("name", node.get("name").asText());
-		}
-
-		return metadata;
-	}
 
 
 	private Resource downloadDataFile() throws IOException {

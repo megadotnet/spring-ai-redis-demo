@@ -3,7 +3,10 @@ package com.redis.demo.spring.ai;
 import io.micrometer.observation.ObservationRegistry;
 import io.milvus.client.MilvusServiceClient;
 import io.milvus.param.ConnectParam;
+import io.milvus.param.IndexType;
+import io.milvus.param.MetricType;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.embedding.TokenCountBatchingStrategy;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.OllamaEmbeddingModel;
 import org.springframework.ai.ollama.api.OllamaApi;
@@ -38,6 +41,7 @@ public class RagConfiguration {
     }
 
     @Bean
+    @Primary
     public VectorStore milvusVectorStore(@Value("${spring.ai.vectorstore.milvus.client.host}") String host,
                                         @Value("${spring.ai.vectorstore.milvus.collection-name}") String collectionName,
                                         EmbeddingModel embeddingModel) {
@@ -53,6 +57,12 @@ public class RagConfiguration {
         MilvusServiceClient client = new MilvusServiceClient(connectParam);
         return MilvusVectorStore.builder(client, embeddingModel)
                 .collectionName(collectionName)
+                .databaseName("default")
+                .indexType(IndexType.IVF_FLAT)
+                .metricType(MetricType.COSINE)
+                .batchingStrategy(new TokenCountBatchingStrategy())
+                .autoId( true)
+                .initializeSchema(true)  // 自动初始化schema
                 .build();
     }
 

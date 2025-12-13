@@ -11,7 +11,6 @@ import java.util.List;
  * 通用文档数量提供者实现
  * 通过相似性搜索来估算文档数量
  */
-@Component
 public class GenericDocumentCountProvider implements DocumentCountProvider {
     
     private final VectorStore vectorStore;
@@ -26,16 +25,14 @@ public class GenericDocumentCountProvider implements DocumentCountProvider {
         try {
             // 执行一个简单的查询来获取一些文档
             List<Document> documentList = vectorStore.similaritySearch(
-                SearchRequest.builder().query(" ").topK(1000).build());
+                SearchRequest.builder().query("test").topK(1).build());
             
-            if (documentList != null) {
-                return documentList.size();
-            } else {
-                return 0;
-            }
+            // 实际项目中可能需要更复杂的逻辑来计算总数
+            // 这里只是简单返回搜索结果的数量
+            return documentList != null ? documentList.size() : 0;
         } catch (Exception e) {
             throw new UnsupportedOperationException(
-                "当前VectorStore实现不支持文档数量查询: " + e.getMessage());
+                "当前VectorStore实现不支持文档数量查询: " + e.getMessage(), e);
         }
     }
 }
