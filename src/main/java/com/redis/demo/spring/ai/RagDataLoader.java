@@ -130,7 +130,7 @@ public class RagDataLoader implements ApplicationRunner {
 		// 检查文档数量，如果已有足够数据则跳过加载
 		try {
 			int numDocs = documentCountProvider.getDocumentCount(indexName);
-			if (numDocs > 20000) {
+			if (numDocs >= 20000) {
 				logger.info("Embeddings already loaded (found {} documents). Skipping", numDocs);
 				return;
 			}

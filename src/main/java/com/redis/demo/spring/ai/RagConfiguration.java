@@ -41,10 +41,7 @@ public class RagConfiguration {
     }
 
     @Bean
-    @Primary
-    public VectorStore milvusVectorStore(@Value("${spring.ai.vectorstore.milvus.client.host}") String host,
-                                        @Value("${spring.ai.vectorstore.milvus.collection-name}") String collectionName,
-                                        EmbeddingModel embeddingModel) {
+    public MilvusServiceClient milvusServiceClient(@Value("${spring.ai.vectorstore.milvus.client.host}") String host) {
         ConnectParam connectParam = ConnectParam.newBuilder()
                 .withHost(host)
                 .withPort(19530)
@@ -54,7 +51,14 @@ public class RagConfiguration {
                 .withIdleTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .build();
                 
-        MilvusServiceClient client = new MilvusServiceClient(connectParam);
+        return new MilvusServiceClient(connectParam);
+    }
+
+    @Bean
+    @Primary
+    public VectorStore milvusVectorStore(MilvusServiceClient client,
+                                        @Value("${spring.ai.vectorstore.milvus.collection-name}") String collectionName,
+                                        EmbeddingModel embeddingModel) {
         return MilvusVectorStore.builder(client, embeddingModel)
                 .collectionName(collectionName)
                 .databaseName("default")
