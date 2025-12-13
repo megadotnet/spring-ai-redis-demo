@@ -17,9 +17,11 @@ import org.springframework.ai.ollama.management.ModelManagementOptions;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.milvus.MilvusVectorStore;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.client.RestClientCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 import java.time.Duration;
 
@@ -28,7 +30,18 @@ public class RagConfiguration {
 
     @Value("${spring.ai.vectorstore.pinecone.index-name}")
     private String indexName;
-    
+
+    @Bean
+    public RestClientCustomizer restClientCustomizer() {
+        return restClientBuilder -> restClientBuilder
+                .requestFactory(new SimpleClientHttpRequestFactory() {{
+                    // 设置连接超时 (毫秒)
+                    setConnectTimeout(Duration.ofSeconds(10).toMillisPart());
+                    // 设置读取超时 (毫秒) - 这里设置为 60 秒，覆盖您的 25 秒需求
+                    setReadTimeout(Duration.ofSeconds(60).toMillisPart());
+                }});
+    }
+
     @Bean
     public EmbeddingModel embeddingModel(
             @Value("${spring.ai.ollama.base-url}") String baseUrl,

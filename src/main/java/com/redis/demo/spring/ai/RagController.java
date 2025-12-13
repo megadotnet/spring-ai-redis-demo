@@ -1,8 +1,11 @@
 package com.redis.demo.spring.ai;
 
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,12 +29,39 @@ public class RagController {
 
 	//tag::chatMessage[]
 	@PostMapping("/chat/{chatId}")
-	@ResponseBody
-	public Message chatMessage(@PathVariable("chatId") String chatId, @RequestBody Prompt prompt) {
-		// Extract user prompt from the body and pass it to the RagService
-		Generation generation = ragService.retrieve(prompt.getPrompt());
-		// Reply with the generated message
-		return Message.of(generation.getOutput().getText());
+// 1. 移除 @ResponseBody (ResponseEntity 包含了响应体逻辑)
+	public CompletableFuture<ResponseEntity<Message>> chatMessage(
+			@PathVariable("chatId") String chatId,
+			@RequestBody Prompt prompt) { // 假设 Prompt 是您的 DTO
+
+		// 2. 开启异步任务，不占用 Tomcat 线程
+		return CompletableFuture.supplyAsync(() -> {
+					// 这里执行耗时操作 (25s+)
+					// 注意：请确保 ragService 内部调用的 Client 超时设置已大于 60s
+					// 假设 prompt.getContents() 获取文本，请根据实际对象调整
+					return ragService.retrieve(prompt.getPrompt());
+				})
+				// 3. 设置 Java 层面的超时 (JDK 9+ 支持 orTimeout)
+				// 建议设置为 60秒，给 Ollama 留足余地
+				.orTimeout(60, TimeUnit.SECONDS)
+
+				// 4. 成功时的处理
+				.thenApply(generation -> {
+					Message message = Message.of(generation.getOutput().getText());
+					return ResponseEntity.ok(message);
+				})
+
+				// 5. 异常或超时时的处理
+				.exceptionally(ex -> {
+					// 区分是超时还是其他错误
+					String errorMsg = "处理请求失败";
+					if (ex instanceof java.util.concurrent.TimeoutException) {
+						errorMsg = "LLM 服务响应超时，请稍后重试";
+					} else {
+						errorMsg = "错误: " + ex.getMessage();
+					}
+					return ResponseEntity.status(500).body(Message.of(errorMsg));
+				});
 	}
 	//end::chatMessage[]
 
