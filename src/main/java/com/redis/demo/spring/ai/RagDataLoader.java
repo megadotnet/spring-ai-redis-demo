@@ -6,16 +6,13 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
+import java.util.zip.ZipInputStream;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
@@ -32,7 +29,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class RagDataLoader implements ApplicationRunner {
 
-	public static final String DATA_BEERS_JSON_GZ = "https://gh.llkk.cc/https://github.com/megadotnet/spring-ai-redis-demo/raw/refs/heads/main/src/main/resources/data/beers.json.gz";
+	public static final String DATA_BEERS_JSON_GZ = "https://qxm.oss-cn-shenzhen.aliyuncs.com/prd/spm/d07a0651-20ff-455c-be4a-62d1d8de2439.png";
 	private static final Logger logger = LoggerFactory.getLogger(RagDataLoader.class);
 
 	// 定义关键字数组
@@ -43,12 +40,12 @@ public class RagDataLoader implements ApplicationRunner {
 	private Resource data;
 
 	// 获取索引名称
-	@Value("${spring.ai.vectorstore.pinecone.index-name}")
+	@Value("${spring.ai.vectorstore.milvus.collection-name}")
 	private String indexName;
 
 	// 定义VectorStore实例
 	private final VectorStore vectorStore;
-	
+
 	// 文档数量提供者
 	private final DocumentCountProvider documentCountProvider;
 
@@ -62,7 +59,7 @@ public class RagDataLoader implements ApplicationRunner {
 	private static final int BATCH_SIZE = 32;
 
 	// 在 RagDataLoader 类中添加文本处理方法
-// 在 RagDataLoader 类中添加以下方法
+	// 在 RagDataLoader 类中添加以下方法
 	private static final int MAX_TOKENS = 512;
 	private static final int CHARS_PER_TOKEN_ESTIMATE = 4;
 
@@ -76,7 +73,7 @@ public class RagDataLoader implements ApplicationRunner {
 		if (!processedContent.equals(content)) {
 			logger.info("Document truncated from {} to {} characters", originalLength, processedContent.length());
 		}
-		
+
 		// 确保文档有ID
 		Map<String, Object> metadata = new HashMap<>(document.getMetadata());
 		if (!metadata.containsKey("id")) {
@@ -86,10 +83,9 @@ public class RagDataLoader implements ApplicationRunner {
 				metadata.put("id", UUID.randomUUID().toString());
 			}
 		}
-		
+
 		return new Document(processedContent, metadata);
 	}
-
 
 	private String truncateTextByTokens(String text) {
 		// 更保守的限制 - 使用更低的字符到token比率
@@ -114,8 +110,6 @@ public class RagDataLoader implements ApplicationRunner {
 		return text;
 	}
 
-
-
 	@Override
 	public void run(ApplicationArguments args) throws Exception {
 
@@ -130,37 +124,64 @@ public class RagDataLoader implements ApplicationRunner {
 		// 检查文档数量，如果已有足够数据则跳过加载
 		try {
 			int numDocs = documentCountProvider.getDocumentCount(indexName);
-			if (numDocs >= 20000) {
+			if (numDocs >= 100) {
 				logger.info("Embeddings already loaded (found {} documents). Skipping", numDocs);
 				return;
 			}
 			logger.info("Found {} existing documents, proceeding with data loading", numDocs);
 		} catch (UnsupportedOperationException e) {
-			logger.warn("Document count check not supported for current VectorStore implementation: {}", e.getMessage());
+			logger.warn("Document count check not supported for current VectorStore implementation: {}",
+					e.getMessage());
 			logger.info("Proceeding with data loading without document count check");
 		}
 
-		// 如果数据资源是.gz格式，则解压
-		if (file.getFilename() != null && file.getFilename().endsWith(".gz")) {
-			GZIPInputStream inputStream = new GZIPInputStream(file.getInputStream());
-			file = new InputStreamResource(inputStream, "beers.json.gz");
+		// 检查文件是否有效
+		if (file == null || !file.exists()) {
+			logger.error("Data file is null or does not exist");
+			return;
 		}
+
+		// 如果数据资源是.gz格式，则解压
+		InputStreamResource inputStreamResource = null;
+		if (file.getFilename() != null && file.getFilename().endsWith(".gz")) {
+			logger.info("Decompressing GZIP file: {}", file.getFilename());
+			GZIPInputStream inputStream = new GZIPInputStream(file.getInputStream());
+			inputStreamResource = new InputStreamResource(inputStream, "beers.json");
+		} else if (file.getFilename() != null && file.getFilename().endsWith(".zip")) {
+			logger.info("Decompressing ZIP file: {}", file.getFilename());
+			ZipInputStream zipinputStream = new ZipInputStream(file.getInputStream());
+			zipinputStream.getNextEntry();
+			inputStreamResource = new InputStreamResource(zipinputStream, "beers.json");
+		}
+
 		logger.info("Creating Embeddings...");
 
 		// Create a JSON reader with fields relevant to our use case
-		JsonReader loader = new JsonReader(file, KEYS);
-		List<Document> documents = loader.get();
-		vectorStore.add(documents);
+		Resource resourceToUse = inputStreamResource != null ? inputStreamResource : file;
+		logger.info("Using resource: {}", resourceToUse.getDescription());
 
+		// 检查资源是否可读
+		if (!resourceToUse.exists()) {
+			logger.error("Resource does not exist: {}", resourceToUse.getDescription());
+			return;
+		}
+
+		try {
+			JsonReader loader = new JsonReader(resourceToUse, KEYS);
+			List<Document> documents = loader.get();
+			logger.info("Loaded {} documents from JSON", documents.size());
+			vectorStore.add(documents);
+			logger.info("Added {} documents to vector store", documents.size());
+		} catch (Exception e) {
+			logger.error("Error processing JSON file: ", e);
+			throw e;
+		}
 
 		logger.info("Embeddings created.");
 	}
 
-
-
-
 	private Resource downloadDataFile() throws IOException {
-		Path tempFile = Files.createTempFile("beers-", ".json.gz");
+		Path tempFile = Files.createTempFile("beers-", ".zip");
 		logger.info("Downloading data file from: {} to: {}", DATA_BEERS_JSON_GZ, tempFile);
 
 		URL downloadUrl = new URL(DATA_BEERS_JSON_GZ);

@@ -71,12 +71,14 @@ public class RagConfiguration {
     @Primary
     public VectorStore milvusVectorStore(MilvusServiceClient client,
                                         @Value("${spring.ai.vectorstore.milvus.collection-name}") String collectionName,
-                                        EmbeddingModel embeddingModel) {
+                                        EmbeddingModel embeddingModel,
+                                        @Value("${spring.ai.vectorstore.milvus.embeddingDimension:1536}") int dimension) {
         return MilvusVectorStore.builder(client, embeddingModel)
                 .collectionName(collectionName)
                 .databaseName("default")
                 .indexType(IndexType.IVF_FLAT)
                 .metricType(MetricType.COSINE)
+                .embeddingDimension(dimension)
                 .batchingStrategy(new TokenCountBatchingStrategy())
                 .autoId( true)
                 .initializeSchema(true)  // 自动初始化schema
