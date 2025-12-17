@@ -1,5 +1,8 @@
 # Spring AI Redis Demo 技术框架解读报告
 
+## 原始数据
+https://gh.llkk.cc/https://github.com/megadotnet/spring-ai-redis-demo/raw/refs/heads/main/src/main/resources/data/beers.json.gz
+
 ## 1. 框架全景图
 
 这是一个基于 Spring Boot 3.2.3 的检索增强生成（RAG）演示应用，结合了 Milvus Vector Database 和大语言模型（LLM）来实现基于知识库的问答系统。该应用使用前后端分离架构，前端采用 React 实现用户界面，后端基于 Spring AI 框架集成 Milvus 和 LLM 服务。
