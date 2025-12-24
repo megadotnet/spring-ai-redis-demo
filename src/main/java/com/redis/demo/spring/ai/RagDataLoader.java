@@ -29,7 +29,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class RagDataLoader implements ApplicationRunner {
 
-	public static final String DATA_BEERS_JSON_GZ = "https://qxm.oss-cn-shenzhen.aliyuncs.com/prd/spm/d07a0651-20ff-455c-be4a-62d1d8de2439.png";
+	//中文description
+	public static final String DATA_BEERS_JSON_GZ = "https://qxm.oss-cn-shenzhen.aliyuncs.com/prd/spm/9d3713be-e6c0-4a5f-bb6c-c015dc6bc4f6.png";
 	private static final Logger logger = LoggerFactory.getLogger(RagDataLoader.class);
 
 	// 定义关键字数组
