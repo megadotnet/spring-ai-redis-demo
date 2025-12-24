@@ -63,8 +63,6 @@ public class RAGFlowDocxParser {
 
         int pageNumber = 0;
 
-        int pageNumber = 0;
-
         // 解析段落
         for (XWPFParagraph paragraph : document.getParagraphs()) {
             StringBuilder paragraphText = new StringBuilder();

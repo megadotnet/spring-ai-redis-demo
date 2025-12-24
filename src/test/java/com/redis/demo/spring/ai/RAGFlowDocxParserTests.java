@@ -6,8 +6,9 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 
+public class RAGFlowDocxParserTests {
 
-/**
+    /**
      * 测试RAGFlowDocxParser的主解析功能
      * 验证解析器能够正确解析远程docx文件并返回有效的解析结果
      * 包括验证解析结果不为null，段落和表格数据存在且段落数量大于0
