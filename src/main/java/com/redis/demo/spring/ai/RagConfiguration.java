@@ -80,7 +80,7 @@ public class RagConfiguration {
                 .metricType(MetricType.COSINE)
                 .embeddingDimension(dimension)
                 .batchingStrategy(new TokenCountBatchingStrategy())
-                .autoId( true)
+                //.autoId( true)
                 .initializeSchema(true)  // 自动初始化schema
                 .build();
     }
