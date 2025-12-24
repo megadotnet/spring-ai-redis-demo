@@ -2,6 +2,8 @@ package com.redis.demo.spring.ai.parse;
 
 import org.apache.poi.xwpf.usermodel.*;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
+import org.springframework.ai.document.Document;
+
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
@@ -9,6 +11,7 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.*;
 import java.util.regex.Pattern;
+
 
 /**
  * RAGFlowDocxParser类用于解析DOCX文档并提取其中的段落和表格内容
@@ -90,6 +93,34 @@ public class RAGFlowDocxParser {
 
         document.close();
         return new ParseResult(sections, tables);
+    }
+
+    /**
+     * 将Section列表转换为Spring AI Document列表
+     * 
+     * @param sections 要转换的Section列表
+     * @return 转换后的Spring AI Document列表
+     */
+    public List<Document> convertSectionsToDocuments(List<Section> sections) {
+        List<Document> documents = new ArrayList<>();
+        for (Section section : sections) {
+            Document document = convertSectionToDocument(section);
+            documents.add(document);
+        }
+        return documents;
+    }
+
+    /**
+     * 将单个Section转换为Spring AI Document
+     * 
+     * @param section 要转换的Section
+     * @return 转换后的Spring AI Document
+     */
+    public Document convertSectionToDocument(Section section) {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("style", section.getStyle());
+        metadata.put("type", "paragraph");
+        return new Document(section.getText(), metadata);
     }
 
     /**
