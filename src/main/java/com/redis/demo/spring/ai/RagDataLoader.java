@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipInputStream;
 
+import com.redis.demo.spring.ai.service.HybridDocumentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
@@ -30,8 +31,10 @@ import org.springframework.stereotype.Component;
 public class RagDataLoader implements ApplicationRunner {
 
 	//中文description
-	public static final String DATA_BEERS_JSON_GZ = "https://qxm.oss-cn-shenzhen.aliyuncs.com/prd/spm/9d3713be-e6c0-4a5f-bb6c-c015dc6bc4f6.png";
+	public static final String DATA_BEERS_JSON_GZ = "https://www.bjchp.gov.cn/cpqzf/xxgk2671/zcxwjyjzj/zjgg35/2025120409595874798/2025120409572915180.docx";
 	private static final Logger logger = LoggerFactory.getLogger(RagDataLoader.class);
+
+
 
 	// 定义关键字数组
 	public static final String[] KEYS = { "name", "abv", "ibu", "description" };
@@ -47,13 +50,16 @@ public class RagDataLoader implements ApplicationRunner {
 	// 定义VectorStore实例
 	private final VectorStore vectorStore;
 
+	private final HybridDocumentService hybridDocumentService;
+
 	// 文档数量提供者
 	private final DocumentCountProvider documentCountProvider;
 
 	// 构造函数，注入VectorStore实例和文档数量提供者
-	public RagDataLoader(VectorStore vectorStore, DocumentCountProvider documentCountProvider) {
+	public RagDataLoader(VectorStore vectorStore, DocumentCountProvider documentCountProvider,HybridDocumentService hybridDocumentService) {
 		this.vectorStore = vectorStore;
 		this.documentCountProvider = documentCountProvider;
+		this.hybridDocumentService=hybridDocumentService;
 	}
 
 	// 在RagDataLoader类中添加批次大小常量
@@ -123,24 +129,15 @@ public class RagDataLoader implements ApplicationRunner {
 		}
 
 		// 检查文档数量，如果已有足够数据则跳过加载
-		try {
-			int numDocs = documentCountProvider.getDocumentCount(indexName);
-			if (numDocs >= 100) {
-				logger.info("Embeddings already loaded (found {} documents). Skipping", numDocs);
-				return;
-			}
-			logger.info("Found {} existing documents, proceeding with data loading", numDocs);
-		} catch (UnsupportedOperationException e) {
-			logger.warn("Document count check not supported for current VectorStore implementation: {}",
-					e.getMessage());
-			logger.info("Proceeding with data loading without document count check");
-		}
+		if (checkDbCollectionRecords()) return;
 
 		// 检查文件是否有效
 		if (file == null || !file.exists()) {
 			logger.error("Data file is null or does not exist");
 			return;
 		}
+
+		List<Document> documents=null;
 
 		// 如果数据资源是.gz格式，则解压
 		InputStreamResource inputStreamResource = null;
@@ -153,36 +150,64 @@ public class RagDataLoader implements ApplicationRunner {
 			ZipInputStream zipinputStream = new ZipInputStream(file.getInputStream());
 			zipinputStream.getNextEntry();
 			inputStreamResource = new InputStreamResource(zipinputStream, "beers.json");
+		} else if (file.getFilename() != null && file.getFilename().endsWith(".docx")) {
+			documents = hybridDocumentService.loadDocDirect(file);
+			logger.info("Creating Embeddings...");
+
+		} else {
+
+			logger.info("Creating Embeddings...");
+
+			// Create a JSON reader with fields relevant to our use case
+			Resource resourceToUse = inputStreamResource != null ? inputStreamResource : file;
+			logger.info("Using resource: {}", resourceToUse.getDescription());
+
+			// 检查资源是否可读
+			if (!resourceToUse.exists()) {
+				logger.error("Resource does not exist: {}", resourceToUse.getDescription());
+				return;
+			}
+
+
+			// 直接使用 Resource 对象，而不是获取文件路径
+			documents = hybridDocumentService.loadDocumentFromZip(resourceToUse);
+
+			logger.info("Loaded {} documents from JSON", documents.size());
+
 		}
 
-		logger.info("Creating Embeddings...");
-
-		// Create a JSON reader with fields relevant to our use case
-		Resource resourceToUse = inputStreamResource != null ? inputStreamResource : file;
-		logger.info("Using resource: {}", resourceToUse.getDescription());
-
-		// 检查资源是否可读
-		if (!resourceToUse.exists()) {
-			logger.error("Resource does not exist: {}", resourceToUse.getDescription());
+		if (documents == null || documents.isEmpty()) {
+			logger.error("No ai documents found in the data file.");
 			return;
 		}
-
-		try {
-			JsonReader loader = new JsonReader(resourceToUse, KEYS);
-			List<Document> documents = loader.get();
-			logger.info("Loaded {} documents from JSON", documents.size());
-			vectorStore.add(documents);
-			logger.info("Added {} documents to vector store", documents.size());
-		} catch (Exception e) {
-			logger.error("Error processing JSON file: ", e);
-			throw e;
-		}
-
+		vectorStore.add(documents);
+		logger.info("Added {} documents to vector store", documents.size());
 		logger.info("Embeddings created.");
 	}
 
+	private boolean checkDbCollectionRecords() {
+		try {
+			int numDocs = documentCountProvider.getDocumentCount(indexName);
+			if (numDocs >= 10) {
+				logger.info("Embeddings already loaded (found {} documents). Skipping", numDocs);
+				return true;
+			}
+			logger.info("Found {} existing documents, proceeding with data loading", numDocs);
+		} catch (UnsupportedOperationException e) {
+			logger.warn("Document count check not supported for current VectorStore implementation: {}",
+					e.getMessage());
+			logger.info("Proceeding with data loading without document count check");
+		}
+		return false;
+	}
+
 	private Resource downloadDataFile() throws IOException {
-		Path tempFile = Files.createTempFile("beers-", ".zip");
+		// 从URL中提取文件扩展名作为后缀
+		String fileExtension = getFileExtension(DATA_BEERS_JSON_GZ);
+		if (fileExtension == null || fileExtension.isEmpty()) {
+			fileExtension = ".zip"; // 默认后缀
+		}
+		Path tempFile = Files.createTempFile("beers-", "." + fileExtension);
 		logger.info("Downloading data file from: {} to: {}", DATA_BEERS_JSON_GZ, tempFile);
 
 		URL downloadUrl = new URL(DATA_BEERS_JSON_GZ);
@@ -196,6 +221,21 @@ public class RagDataLoader implements ApplicationRunner {
 
 		logger.info("Data file downloaded successfully.");
 		return new UrlResource(tempFile.toUri());
+	}
+
+	// 提取文件扩展名的辅助方法
+	private String getFileExtension(String url) {
+		try {
+			URL downloadUrl = new URL(url);
+			String path = downloadUrl.getPath();
+			int lastDotIndex = path.lastIndexOf('.');
+			if (lastDotIndex > 0 && lastDotIndex < path.length() - 1) {
+				return path.substring(lastDotIndex + 1);
+			}
+		} catch (Exception e) {
+			logger.warn("Error parsing file extension from URL: {}", e.getMessage());
+		}
+		return null;
 	}
 
 }

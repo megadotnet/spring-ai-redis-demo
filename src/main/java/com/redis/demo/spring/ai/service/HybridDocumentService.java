@@ -7,11 +7,11 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.JsonReader;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service
 public class HybridDocumentService {
@@ -19,28 +19,40 @@ public class HybridDocumentService {
     private final RAGFlowDocxParser customDocxParser = new RAGFlowDocxParser();
     // 注入 Spring AI 的 Tika Reader...
 
-    public List<Document> loadDocument(String path) throws IOException, InvalidFormatException {
-        if (path.endsWith(".docx")) {
-            // 1. 使用你的深度解析器
-            RAGFlowDocxParser.ParseResult result = customDocxParser.parse(path, null);
+    // 保留原始的基于路径的方法，但内部使用 Resource 方式
+    public List<Document> loadDocDirect(Resource resource) throws IOException, InvalidFormatException {
+        String filename = resource.getFilename();
+        if (filename.endsWith(".docx")) {
+            // 由于 RAGFlowDocxParser 只接受文件路径，我们暂时仍需要获取文件路径
+            // 但我们可以检查是否可以访问文件
+            if (resource.isFile()) {
+                RAGFlowDocxParser.ParseResult result = customDocxParser.parse(resource.getFile().getAbsolutePath(), null);
 
-            // 2. 转换 Paragraphs
-            List<Document> docs = customDocxParser.convertSectionsToDocuments(result.getSections());
+                // 2. 转换 Paragraphs
+                List<Document> docs = customDocxParser.convertSectionsToDocuments(result.getSections());
 
-            // 3. 转换 Tables (你的代码把表格作为 List<List<String>> 返回，你需要决定如何把它们变成 Document)
-            for (List<String> tableLines : result.getTables()) {
-                String tableText = String.join("\n", tableLines);
-                docs.add(new Document(tableText, Map.of("type", "table")));
+                // 3. 转换 Tables (你的代码把表格作为 List<List<String>> 返回，你需要决定如何把它们变成 Document)
+                for (List<String> tableLines : result.getTables()) {
+                    String tableText = String.join("\n", tableLines);
+                    docs.add(new Document(tableText, Map.of("type", "table")));
+                }
+                return docs;
+            } else {
+                throw new IOException("DOCX files must be accessed as files, not as streams");
             }
-            return docs;
-        } else if (path.endsWith(".pdf")){
+        } else if (filename.endsWith(".pdf")) {
             // 使用 Tika 处理 PDF 等
-            return new TikaDocumentReader(new FileSystemResource(path)).read();
+            return new TikaDocumentReader(resource).read();
         }
-        else {
-            // 其他文件json类型
-            JsonReader loader = new JsonReader(new FileSystemResource(path), RagDataLoader.KEYS);
+        return new JsonReader(resource, RagDataLoader.KEYS).get();
+    }
+    
+    // 新增基于 Resource 的方法，支持各种类型的资源
+    public List<Document> loadDocumentFromZip(Resource resource) throws IOException, InvalidFormatException {
+
+            // 如果无法获取文件名，默认处理为 JSON 文件
+            JsonReader loader = new JsonReader(resource, RagDataLoader.KEYS);
             return loader.get();
-        }
+
     }
 }

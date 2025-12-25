@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.zip.GZIPOutputStream;
 import java.io.ByteArrayOutputStream;
 
+import com.redis.demo.spring.ai.service.HybridDocumentService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,9 @@ class RagDataLoaderTest {
 
     @Mock
     private DocumentCountProvider documentCountProvider;
+
+    @Mock
+    private HybridDocumentService hybridDocumentService;
 
     @Mock
     private Resource dataResource;
@@ -67,7 +71,7 @@ class RagDataLoaderTest {
 
     @BeforeEach
     void setUp() {
-        ragDataLoader = new RagDataLoader(vectorStore, documentCountProvider);
+        ragDataLoader = new RagDataLoader(vectorStore, documentCountProvider,hybridDocumentService);
         ReflectionTestUtils.setField(ragDataLoader, "data", dataResource);
         ReflectionTestUtils.setField(ragDataLoader, "indexName", INDEX_NAME);
     }
