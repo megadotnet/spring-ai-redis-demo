@@ -56,6 +56,10 @@
                 <version>5.2.3</version>
             </dependency>
 
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-tika-document-reader</artifactId>
+        </dependency>
         
         <!-- 显式添加 protobuf 依赖解决版本冲突 -->
         <dependency>

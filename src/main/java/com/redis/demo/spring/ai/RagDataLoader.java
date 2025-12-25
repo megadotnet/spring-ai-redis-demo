@@ -34,7 +34,7 @@ public class RagDataLoader implements ApplicationRunner {
 	private static final Logger logger = LoggerFactory.getLogger(RagDataLoader.class);
 
 	// 定义关键字数组
-	private static final String[] KEYS = { "name", "abv", "ibu", "description" };
+	public static final String[] KEYS = { "name", "abv", "ibu", "description" };
 
 	// 获取数据资源
 	@Value("classpath:/data/beers.json.gz")
