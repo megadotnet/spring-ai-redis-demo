@@ -7,18 +7,39 @@ import java.util.Map;
 import com.redis.demo.spring.ai.RagDataLoader;
 import com.redis.demo.spring.ai.parse.RAGFlowDocxParser;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.JsonReader;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
 import org.springframework.ai.transformer.splitter.TextSplitter;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
 @Service
 public class HybridDocumentService {
 
+    private static final Logger logger = LoggerFactory.getLogger(HybridDocumentService.class);
+
     private final RAGFlowDocxParser customDocxParser = new RAGFlowDocxParser();
+
+    // 学术论文分块配置参数
+    @Value("${chunking.defaultChunkSize:800}")
+    private int defaultChunkSize;
+
+    @Value("${chunking.minChunkSizeChars:350}")
+    private int minChunkSizeChars;
+
+    @Value("${chunking.minChunkLengthToEmbed:5}")
+    private int minChunkLengthToEmbed;
+
+    @Value("${chunking.maxNumChunks:10000}")
+    private int maxNumChunks;
+
+    @Value("${chunking.keepSeparator:true}")
+    private boolean keepSeparator;
 
     public List<Document> loadDocDirect(Resource resource) throws IOException, InvalidFormatException {
         String filename = resource.getFilename();
@@ -26,7 +47,8 @@ public class HybridDocumentService {
             // 由于 RAGFlowDocxParser 只接受文件路径，我们暂时仍需要获取文件路径
             // 但我们可以检查是否可以访问文件
             if (resource.isFile()) {
-                RAGFlowDocxParser.ParseResult result = customDocxParser.parse(resource.getFile().getAbsolutePath(), null);
+                RAGFlowDocxParser.ParseResult result = customDocxParser.parse(resource.getFile().getAbsolutePath(),
+                        null);
 
                 // 2. 转换 Paragraphs
                 List<Document> docs = customDocxParser.convertSectionsToDocuments(result.getSections());
@@ -41,11 +63,30 @@ public class HybridDocumentService {
                 throw new IOException("DOCX files must be accessed as files, not as streams");
             }
         } else if (filename.endsWith(".pdf")) {
-            // 使用 Tika 处理 PDF 等
+            // 使用 Tika 处理 PDF 文档
             List<Document> documents = new TikaDocumentReader(resource).read();
-            // 添加文档分块逻辑
-            TextSplitter splitter = new TokenTextSplitter();
-            return splitter.split(documents);
+
+            // 学术论文优化的分块逻辑
+            // - defaultChunkSize: 800 tokens，适合论文段落的完整性
+            // - minChunkSizeChars: 350 字符，避免过小的分块
+            // - minChunkLengthToEmbed: 5，过滤过短的无意义文本
+            // - maxNumChunks: 10000，支持长论文
+            // - keepSeparator: true，保留段落分隔符维持结构
+            TokenTextSplitter splitter = new TokenTextSplitter(
+                    defaultChunkSize,
+                    minChunkSizeChars,
+                    minChunkLengthToEmbed,
+                    maxNumChunks,
+                    keepSeparator);
+
+            logger.info(
+                    "PDF分块配置: chunkSize={}, minChunkSizeChars={}, minChunkLengthToEmbed={}, maxNumChunks={}, keepSeparator={}",
+                    defaultChunkSize, minChunkSizeChars, minChunkLengthToEmbed, maxNumChunks, keepSeparator);
+
+            List<Document> splitDocs = splitter.split(documents);
+            logger.info("PDF文档分块完成: 原始{}个文档 -> 分块后{}个文档", documents.size(), splitDocs.size());
+
+            return splitDocs;
         }
         return new JsonReader(resource, RagDataLoader.KEYS).get();
     }
