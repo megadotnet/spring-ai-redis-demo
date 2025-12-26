@@ -45,10 +45,11 @@ public class RagService {
 		// Query Redis for the top K documents most relevant to the input message
 		List<Document> docs = store.similaritySearch(request);
 		Message systemMessage = getSystemMessage(docs);
-		logger.info("RAG return : {}", systemMessage.getText());
+		//logger.trace("RAG return : {}", systemMessage.getText());
 		UserMessage userMessage = new UserMessage(message);
 		// Assemble the complete prompt using a template
 		Prompt prompt = new Prompt(List.of(systemMessage, userMessage));
+		logger.info("Finall System prompt: {}", prompt.getSystemMessage());
 		// Call the autowired chat model with the prompt
 		ChatResponse response = chatModel.call(prompt);
 		return response.getResult();
