@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -18,6 +20,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 
 public class RagService {
+
+	private static final Logger logger = LoggerFactory.getLogger(RagService.class);
 
 	@Value("classpath:/prompts/system-qa.st")
 	private Resource systemBeerPrompt;
@@ -41,6 +45,7 @@ public class RagService {
 		// Query Redis for the top K documents most relevant to the input message
 		List<Document> docs = store.similaritySearch(request);
 		Message systemMessage = getSystemMessage(docs);
+		logger.info("RAG return : {}", systemMessage.getText());
 		UserMessage userMessage = new UserMessage(message);
 		// Assemble the complete prompt using a template
 		Prompt prompt = new Prompt(List.of(systemMessage, userMessage));
