@@ -1,56 +1,170 @@
-= Spring AI Redis Demo
+= Spring AI RAG Demo
 :linkattrs:
-:project-owner:   redis-developer
+:project-owner:   megadotnet
 :project-name:    spring-ai-redis-demo
-:project-group:   com.redis
+:project-group:   com.redis.demo
 :project-version: 0.0.1-SNAPSHOT
-:project-title:   Spring AI Redis Demo
+:project-title:   Spring AI RAG Demo
 
 ---
 
-A Retrieval Augmented Generation demo using link:https://docs.spring.io/spring-ai/reference/[Spring AI] and link:https://redis.io/docs/interact/search-and-query/advanced-concepts/vectors/[Redis Vector Search].
+基于 link:https://docs.spring.io/spring-ai/reference/[Spring AI] 和 link:https://milvus.io/[Milvus] 向量数据库的检索增强生成（RAG）演示应用，集成 Rerank 精排功能。
 
-== Pre-requisites
+== 技术架构
+
+[source]
+----
+                    ┌─────────────┐
+                    │   React UI  │
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │ Spring Boot │
+                    │   3.2.3     │
+                    └──────┬──────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+┌───────▼───────┐  ┌───────▼───────┐  ┌───────▼───────┐
+│  Ollama LLM   │  │    Milvus     │  │  SiliconFlow  │
+│  (Chat/Embed) │  │ Vector Store  │  │   (Rerank)    │
+└───────────────┘  └───────────────┘  └───────────────┘
+----
+
+=== 核心技术栈
+
+[cols="1,2,2"]
+|===
+| 组件 | 技术 | 说明
+
+| 后端框架
+| Spring Boot 3.2.3 + Spring AI 1.0.0
+| Java 17+
+
+| LLM 服务
+| Ollama (qwen2.5:0.5b)
+| 本地部署，支持中文
+
+| Embedding
+| Ollama (bge-m3:latest)
+| 1024 维向量
+
+| 向量数据库
+| Milvus
+| 高性能向量检索
+
+| Rerank 精排
+| 硅基流动 API (BAAI/bge-reranker-v2-m3)
+| 提升检索相关性
+
+| 前端
+| React 18 + Bootstrap 5
+| 聊天界面
+|===
+
+== 前置条件
 
 === Docker
 
-This demo requires Docker to build and run the application.
-
-=== OpenAI
-
-Obtain your OpenAI `endpoint` (e.g. `https://api.siliconflow.cn`) and `api-key` from the  OpenAI Service section on https://api.siliconflow.cn[siliconflow Portal].
-
-The Spring AI project defines a configuration property named `spring.ai.openai.api-key` that you should set to the value of the `OPENAPI_KEY` obtained from runtime environment.
-
-If your model deployment name is not the default `DeepSeek-V3` you can specify it using the configuration property named `spring.ai.openai.chat.model`.
-
-Exporting an environment variable is one way to set these configuration properties.
+运行 Milvus 向量数据库：
 [source,console]
 ----
-export OPENAPI_KEY=<INSERT KEY HERE>
-export SPRING_AI_OPENAI_ENDPOINT=<INSERT ENDPOINT URL HERE>
-export SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL=<INSERT MODEL NAME HERE>
+docker compose up -d
 ----
 
-=== PINECONE_APIKEY
-IntelliJ IDEA
-Run → Edit Configurations
-选择你的运行配置
-在"Environment variables"中添加：
-Name: SPRING_AI_VECTORSTORE_PINECONE_APIKEY
-Value: 你的API密钥
+=== Ollama
 
-== Run the demo
+安装并运行 link:https://ollama.com/[Ollama]，下载所需模型：
+[source,console]
+----
+ollama pull qwen2.5:0.5b
+ollama pull bge-m3:latest
+----
+
+=== 硅基流动 API Key（可选，用于 Rerank）
+
+从 link:https://cloud.siliconflow.cn/[硅基流动控制台] 获取 API Key。
+
+== 配置
+
+=== 环境变量
 
 [source,console]
 ----
-git clone https://github.com/{project-owner}/{project-name}.git
+# Rerank 功能 (可选)
+export SILICONFLOW_KEY=<你的硅基流动API Key>
+----
+
+=== 应用配置 (application.properties)
+
+[source,properties]
+----
+# Ollama 配置
+spring.ai.ollama.base-url=http://127.0.0.1:11434
+spring.ai.ollama.embedding.options.model=bge-m3:latest
+spring.ai.ollama.chat.options.model=qwen2.5:0.5b
+
+# Milvus 配置
+spring.ai.vectorstore.milvus.client.host=192.168.0.218
+spring.ai.vectorstore.milvus.client.port=19530
+spring.ai.vectorstore.milvus.collection-name=beers_collection_vpdf
+
+# Rerank 配置
+rerank.enabled=true
+rerank.model=BAAI/bge-reranker-v2-m3
+rerank.topN=5
+----
+
+== 运行
+
+[source,console]
+----
+git clone https://gitee.com/{project-owner}/{project-name}.git
 cd {project-name}
-docker compose up
+mvn spring-boot:run
 ----
 
-Once the Spring application is running (`com.....Application: Started Application in ...`), point your browser to link:http://localhost:8080[localhost:8080] and ask a question around beers:
+应用启动后，访问 link:http://localhost:8080[http://localhost:8080]。
 
-image:src/docs/asciidoc/spring-ai-redis-screenshot.png[]
+== RAG 工作流程
 
+[source]
+----
+1. 用户提问
+      │
+2. 向量召回 (Milvus TopK=10)
+      │
+3. Rerank 精排 (SiliconFlow TopN=5) [可选]
+      │
+4. 构建 Prompt + 上下文文档
+      │
+5. LLM 生成回答 (Ollama)
+      │
+6. 返回结果
+----
+
+== 项目结构
+
+[source]
+----
+src/main/java/com/redis/demo/spring/ai/
+├── RagApplication.java          # 应用入口
+├── RagController.java           # REST API 控制器
+├── RagConfiguration.java        # Spring 配置
+├── RagDataLoader.java           # 数据初始化加载器
+└── service/
+    ├── RagService.java          # RAG 核心服务
+    ├── RerankService.java       # Rerank 精排服务
+    └── RerankResult.java        # Rerank 结果封装
+----
+
+== 相关文档
+
+* link:Architecture.md[技术架构详解]
+* link:DOCKER-README.md[Docker 部署指南]
+* link:TEST-README.md[测试说明]
+
+== License
+
+MIT License
 

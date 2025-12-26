@@ -29,34 +29,62 @@ public class RagService {
 	@Value("${topk:10}")
 	private int topK;
 
+	@Value("${rerank.enabled:false}")
+	private boolean rerankEnabled;
+
+	@Value("${rerank.topN:5}")
+	private int rerankTopN;
+
 	private final ChatModel chatModel;
 
 	private final VectorStore store;
 
+	private final RerankService rerankService;
+
+	/**
+	 * 构造函数（不启用 rerank）
+	 */
 	public RagService(ChatModel chatModel, VectorStore store) {
+		this(chatModel, store, null);
+	}
+
+	/**
+	 * 构造函数（支持可选的 rerank 服务）
+	 */
+	public RagService(ChatModel chatModel, VectorStore store, RerankService rerankService) {
 		this.chatModel = chatModel;
 		this.store = store;
+		this.rerankService = rerankService;
 	}
 
 	// tag::retrieve[]
 	public Generation retrieve(String message) {
 		// Create a search request to find relevant documents
 		SearchRequest request = SearchRequest.builder().query(message).topK(topK).build();
-		// Query Redis for the top K documents most relevant to the input message
+		// Query vector store for the top K documents most relevant to the input message
 		List<Document> docs = store.similaritySearch(request);
+		logger.info("Retrieved {} documents from vector store", docs.size());
+
+		// 可选的 rerank 精排流程
+		if (rerankEnabled && rerankService != null) {
+			logger.info("Rerank is enabled, performing rerank with topN={}", rerankTopN);
+			docs = rerankService.rerank(message, docs, rerankTopN);
+			logger.info("After rerank: {} documents selected", docs.size());
+		}
+
 		Message systemMessage = getSystemMessage(docs);
-		//logger.trace("RAG return : {}", systemMessage.getText());
+		// logger.trace("RAG return : {}", systemMessage.getText());
 		UserMessage userMessage = new UserMessage(message);
 		// Assemble the complete prompt using a template
 		Prompt prompt = new Prompt(List.of(systemMessage, userMessage));
-		logger.info("Finall System prompt: {}", prompt.getSystemMessage());
+		//logger.info("Final System prompt: {}", prompt.getSystemMessage());
 		// Call the autowired chat model with the prompt
 		ChatResponse response = chatModel.call(prompt);
 		return response.getResult();
 	}
 	// end::retrieve[]
 
-// 根据相似的文档列表获取系统消息
+	// 根据相似的文档列表获取系统消息
 	private Message getSystemMessage(List<Document> similarDocuments) {
 		// 将相似的文档列表中的文本拼接成一个字符串
 		String documents = similarDocuments.stream().map(doc -> doc.getText()).collect(Collectors.joining("\n"));
