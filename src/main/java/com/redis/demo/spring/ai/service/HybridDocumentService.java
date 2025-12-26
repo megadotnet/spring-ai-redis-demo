@@ -11,8 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.JsonReader;
-import org.springframework.ai.reader.tika.TikaDocumentReader;
-import org.springframework.ai.transformer.splitter.TextSplitter;
+import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
+import org.springframework.ai.reader.pdf.config.PdfDocumentReaderConfig;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -63,8 +63,18 @@ public class HybridDocumentService {
                 throw new IOException("DOCX files must be accessed as files, not as streams");
             }
         } else if (filename.endsWith(".pdf")) {
-            // 使用 Tika 处理 PDF 文档
-            List<Document> documents = new TikaDocumentReader(resource).read();
+            // 使用 PagePdfDocumentReader 处理 PDF 文档（基于 Apache PdfBox）
+            // 配置每页作为一个单独的 Document，便于精细化分块处理
+            PdfDocumentReaderConfig config = PdfDocumentReaderConfig.builder()
+                    .withPageTopMargin(0)
+                    .withPageBottomMargin(0)
+                    .withPagesPerDocument(1) // 每页作为一个 Document
+                    .build();
+
+            PagePdfDocumentReader pdfReader = new PagePdfDocumentReader(resource, config);
+            List<Document> documents = pdfReader.read();
+
+            logger.info("PDF文档读取完成: 共{}页", documents.size());
 
             // 学术论文优化的分块逻辑
             // - defaultChunkSize: 800 tokens，适合论文段落的完整性
