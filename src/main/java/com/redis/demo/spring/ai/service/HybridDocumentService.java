@@ -11,8 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.JsonReader;
-import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
-import org.springframework.ai.reader.pdf.config.PdfDocumentReaderConfig;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -24,6 +22,9 @@ public class HybridDocumentService {
     private static final Logger logger = LoggerFactory.getLogger(HybridDocumentService.class);
 
     private final RAGFlowDocxParser customDocxParser = new RAGFlowDocxParser();
+
+    // DeepSeek-OCR 文档读取器
+    private final DeepSeekOcrDocumentReader deepSeekOcrReader;
 
     // 学术论文分块配置参数
     @Value("${chunking.defaultChunkSize:800}")
@@ -40,6 +41,24 @@ public class HybridDocumentService {
 
     @Value("${chunking.keepSeparator:true}")
     private boolean keepSeparator;
+
+    /**
+     * 构造函数，初始化 DeepSeek-OCR 读取器
+     * 
+     * @param siliconflowApiKey 硅基流动 API Key (从环境变量或配置获取)
+     * @param ocrModel          OCR 模型名称
+     */
+    public HybridDocumentService(
+            @Value("${SILICONFLOW_KEY:#{environment.SILICONFLOW_KEY}}") String siliconflowApiKey,
+            @Value("${deepseek-ocr.model:deepseek-ai/DeepSeek-OCR}") String ocrModel) {
+        // 尝试从环境变量获取 API Key
+        String apiKey = siliconflowApiKey;
+        if (apiKey == null || apiKey.trim().isEmpty() || apiKey.contains("environment.SILICONFLOW_KEY")) {
+            apiKey = System.getenv("SILICONFLOW_KEY");
+        }
+        this.deepSeekOcrReader = new DeepSeekOcrDocumentReader(apiKey, ocrModel);
+        logger.info("HybridDocumentService initialized with DeepSeek-OCR model: {}", ocrModel);
+    }
 
     public List<Document> loadDocDirect(Resource resource) throws IOException, InvalidFormatException {
         String filename = resource.getFilename();
@@ -63,18 +82,13 @@ public class HybridDocumentService {
                 throw new IOException("DOCX files must be accessed as files, not as streams");
             }
         } else if (filename.endsWith(".pdf")) {
-            // 使用 PagePdfDocumentReader 处理 PDF 文档（基于 Apache PdfBox）
-            // 配置每页作为一个单独的 Document，便于精细化分块处理
-            PdfDocumentReaderConfig config = PdfDocumentReaderConfig.builder()
-                    .withPageTopMargin(0)
-                    .withPageBottomMargin(0)
-                    .withPagesPerDocument(1) // 每页作为一个 Document
-                    .build();
+            // 使用 DeepSeek-OCR 多模态 API 处理 PDF 文档
+            // 通过硅基流动 API 将 PDF 转换为 Markdown 格式
+            logger.info("开始使用 DeepSeek-OCR 处理 PDF 文件: {}", filename);
 
-            PagePdfDocumentReader pdfReader = new PagePdfDocumentReader(resource, config);
-            List<Document> documents = pdfReader.read();
+            List<Document> documents = deepSeekOcrReader.read(resource);
 
-            logger.info("PDF文档读取完成: 共{}页", documents.size());
+            logger.info("DeepSeek-OCR 处理完成: 获取到 {} 个文档", documents.size());
 
             // 学术论文优化的分块逻辑
             // - defaultChunkSize: 800 tokens，适合论文段落的完整性
