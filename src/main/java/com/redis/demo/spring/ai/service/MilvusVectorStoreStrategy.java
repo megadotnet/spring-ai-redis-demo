@@ -1,4 +1,4 @@
-package com.redis.demo.spring.ai;
+package com.redis.demo.spring.ai.service;
 
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.milvus.MilvusVectorStore;

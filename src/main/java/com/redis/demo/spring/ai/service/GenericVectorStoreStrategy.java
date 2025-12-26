@@ -1,7 +1,6 @@
-package com.redis.demo.spring.ai;
+package com.redis.demo.spring.ai.service;
 
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.stereotype.Component;
 
 /**
  * 通用VectorStore策略实现

@@ -1,4 +1,4 @@
-package com.redis.demo.spring.ai;
+package com.redis.demo.spring.ai.service;
 
 /**
  * 提供文档数量查询功能的接口

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.zip.GZIPOutputStream;
 import java.io.ByteArrayOutputStream;
 
+import com.redis.demo.spring.ai.service.DocumentCountProvider;
 import com.redis.demo.spring.ai.service.HybridDocumentService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

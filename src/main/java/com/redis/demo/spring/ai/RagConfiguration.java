@@ -1,5 +1,6 @@
 package com.redis.demo.spring.ai;
 
+import com.redis.demo.spring.ai.service.RagService;
 import io.micrometer.observation.ObservationRegistry;
 import io.milvus.client.MilvusServiceClient;
 import io.milvus.param.ConnectParam;
@@ -7,11 +8,9 @@ import io.milvus.param.IndexType;
 import io.milvus.param.MetricType;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.embedding.TokenCountBatchingStrategy;
-import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.OllamaEmbeddingModel;
 import org.springframework.ai.ollama.api.OllamaApi;
 import org.springframework.ai.ollama.api.OllamaOptions;
-import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.ollama.management.ModelManagementOptions;
 import org.springframework.ai.vectorstore.VectorStore;

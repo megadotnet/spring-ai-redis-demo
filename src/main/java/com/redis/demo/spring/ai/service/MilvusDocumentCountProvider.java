@@ -1,4 +1,4 @@
-package com.redis.demo.spring.ai;
+package com.redis.demo.spring.ai.service;
 
 import io.milvus.grpc.FlushResponse;
 import io.milvus.grpc.GetCollectionStatisticsResponse;

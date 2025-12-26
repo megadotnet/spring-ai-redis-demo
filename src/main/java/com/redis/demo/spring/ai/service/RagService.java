@@ -1,4 +1,4 @@
-package com.redis.demo.spring.ai;
+package com.redis.demo.spring.ai.service;
 
 import java.util.List;
 import java.util.Map;
