@@ -148,7 +148,7 @@ public class MarkdownElementExtractorTest {
         String markdownUrl = "https://gitee.com/Tencent-BlueKing/bk-ci/raw/master/README.md";
         String markdown = readMarkdownFromUrl(markdownUrl);
 
-        MarkdownProcessor processor = new MarkdownProcessor(128, "\n!?;。；！？", false);
+        MarkdownProcessor processor = new MarkdownProcessor(4096, "\n!?;。；！？", false);
         ProcessingResult result = processor.processMarkdown(markdown);
 
         assertNotNull(result);

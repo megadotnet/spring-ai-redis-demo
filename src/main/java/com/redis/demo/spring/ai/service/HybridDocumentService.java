@@ -6,6 +6,9 @@ import java.util.Map;
 
 import com.redis.demo.spring.ai.RagDataLoader;
 import com.redis.demo.spring.ai.parse.RAGFlowDocxParser;
+import com.redis.demo.spring.ai.util.MarkdownProcessor;
+import com.redis.demo.spring.ai.util.ProcessingResult;
+import com.redis.demo.spring.ai.util.TextChunk;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,7 +29,7 @@ public class HybridDocumentService {
     // DeepSeek-OCR 文档读取器
     private final DeepSeekOcrDocumentReader deepSeekOcrReader;
 
-    // 学术论文分块配置参数
+    // 学术论文分块配置参数 (TokenTextSplitter)
     @Value("${chunking.defaultChunkSize:800}")
     private int defaultChunkSize;
 
@@ -41,6 +44,20 @@ public class HybridDocumentService {
 
     @Value("${chunking.keepSeparator:true}")
     private boolean keepSeparator;
+
+    // 切块算法配置：markdown（自定义Markdown切块，默认）或 token（TokenTextSplitter）
+    @Value("${chunking.algorithm:markdown}")
+    private String chunkingAlgorithm;
+
+    // MarkdownProcessor 自定义切块参数
+    @Value("${chunking.markdown.chunkTokenNum:128}")
+    private int markdownChunkTokenNum;
+
+    @Value("${chunking.markdown.delimiter:\n!?;。；！？}")
+    private String markdownDelimiter;
+
+    @Value("${chunking.markdown.separateTables:true}")
+    private boolean markdownSeparateTables;
 
     /**
      * 构造函数，初始化 DeepSeek-OCR 读取器
@@ -90,25 +107,57 @@ public class HybridDocumentService {
 
             logger.info("DeepSeek-OCR 处理完成: 获取到 {} 个文档", documents.size());
 
-            // 学术论文优化的分块逻辑
-            // - defaultChunkSize: 800 tokens，适合论文段落的完整性
-            // - minChunkSizeChars: 350 字符，避免过小的分块
-            // - minChunkLengthToEmbed: 5，过滤过短的无意义文本
-            // - maxNumChunks: 10000，支持长论文
-            // - keepSeparator: true，保留段落分隔符维持结构
-            TokenTextSplitter splitter = new TokenTextSplitter(
-                    defaultChunkSize,
-                    minChunkSizeChars,
-                    minChunkLengthToEmbed,
-                    maxNumChunks,
-                    keepSeparator);
+            List<Document> splitDocs;
 
-            logger.info(
-                    "PDF分块配置: chunkSize={}, minChunkSizeChars={}, minChunkLengthToEmbed={}, maxNumChunks={}, keepSeparator={}",
-                    defaultChunkSize, minChunkSizeChars, minChunkLengthToEmbed, maxNumChunks, keepSeparator);
+            // 根据配置选择切块算法
+            if ("markdown".equalsIgnoreCase(chunkingAlgorithm)) {
+                // 使用自定义 MarkdownProcessor 分块
+                // 基于 Markdown 语义结构（表格、段落等）进行分块
+                logger.info("使用 MarkdownProcessor 切块算法, chunkTokenNum={}, delimiter长度={}, separateTables={}",
+                        markdownChunkTokenNum, markdownDelimiter.length(), markdownSeparateTables);
 
-            List<Document> splitDocs = splitter.split(documents);
-            logger.info("PDF文档分块完成: 原始{}个文档 -> 分块后{}个文档", documents.size(), splitDocs.size());
+                splitDocs = new java.util.ArrayList<>();
+                for (Document doc : documents) {
+                    String markdownContent = doc.getText();
+                    MarkdownProcessor processor = new MarkdownProcessor(
+                            markdownChunkTokenNum,
+                            markdownDelimiter,
+                            markdownSeparateTables);
+                    ProcessingResult result = processor.processMarkdown(markdownContent);
+
+                    // 将 TextChunk 转换为 Document
+                    for (TextChunk chunk : result.getChunks()) {
+                        Map<String, Object> metadata = new java.util.HashMap<>(doc.getMetadata());
+                        metadata.put("chunk_type", chunk.getType());
+                        metadata.put("start_line", chunk.getStartLine());
+                        metadata.put("end_line", chunk.getEndLine());
+                        splitDocs.add(new Document(chunk.getContent(), metadata));
+                    }
+                }
+
+                logger.info("MarkdownProcessor 分块完成: 原始{}个文档 -> 分块后{}个文档", documents.size(), splitDocs.size());
+            } else {
+                // 使用 TokenTextSplitter 分块（token 算法）
+                // 学术论文优化的分块逻辑
+                // - defaultChunkSize: 800 tokens，适合论文段落的完整性
+                // - minChunkSizeChars: 350 字符，避免过小的分块
+                // - minChunkLengthToEmbed: 5，过滤过短的无意义文本
+                // - maxNumChunks: 10000，支持长论文
+                // - keepSeparator: true，保留段落分隔符维持结构
+                TokenTextSplitter splitter = new TokenTextSplitter(
+                        defaultChunkSize,
+                        minChunkSizeChars,
+                        minChunkLengthToEmbed,
+                        maxNumChunks,
+                        keepSeparator);
+
+                logger.info(
+                        "使用 TokenTextSplitter 切块算法: chunkSize={}, minChunkSizeChars={}, minChunkLengthToEmbed={}, maxNumChunks={}, keepSeparator={}",
+                        defaultChunkSize, minChunkSizeChars, minChunkLengthToEmbed, maxNumChunks, keepSeparator);
+
+                splitDocs = splitter.split(documents);
+                logger.info("TokenTextSplitter 分块完成: 原始{}个文档 -> 分块后{}个文档", documents.size(), splitDocs.size());
+            }
 
             return splitDocs;
         }
