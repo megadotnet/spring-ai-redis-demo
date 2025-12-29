@@ -99,20 +99,52 @@ export SILICONFLOW_KEY=<你的硅基流动API Key>
 
 [source,properties]
 ----
-# Ollama 配置
+# --- 模型提供者配置 ---
+# 可选值: ollama, openai
+# 默认使用 ollama
+chat.provider=openai
+
+# --- Ollama 配置 (当 chat.provider=ollama 时生效) ---
 spring.ai.ollama.base-url=http://127.0.0.1:11434
+# Embedding 模型
 spring.ai.ollama.embedding.options.model=bge-m3:latest
+# Chat 模型
 spring.ai.ollama.chat.options.model=qwen2.5:0.5b
 
-# Milvus 配置
-spring.ai.vectorstore.milvus.client.host=192.168.0.218
-spring.ai.vectorstore.milvus.client.port=19530
-spring.ai.vectorstore.milvus.collection-name=beers_collection_vpdf
+# --- OpenAI 配置 (当 chat.provider=openai 时生效) ---
+# 推荐使用环境变量 SILICONFLOW_KEY 设置 API Key
+spring.ai.openai.api-key=${SILICONFLOW_KEY:}
+spring.ai.openai.base-url=https://api.siliconflow.cn
+spring.ai.openai.chat.model=Qwen/Qwen3-8B
 
-# Rerank 配置
+# --- Milvus 向量库配置 ---
+spring.ai.vectorstore.milvus.client.host=10.1.1.234
+spring.ai.vectorstore.milvus.client.port=19530
+spring.ai.vectorstore.milvus.collection-name=paper_collection_vpdf
+
+# --- RAG 检索配置 ---
+# 初筛召回数量
+topk=10
+# Rerank 精排开关
 rerank.enabled=true
 rerank.model=BAAI/bge-reranker-v2-m3
 rerank.topN=5
+
+# --- 文档处理与切块配置 ---
+# 切块算法: markdown (默认, 基于语义) 或 token (基于长度)
+chunking.algorithm=markdown
+
+# Markdown 切块参数
+chunking.markdown.chunkTokenNum=4096
+# 语义分割符
+chunking.markdown.delimiter=\n!?;。；！？
+# 表格单独切块
+chunking.markdown.separateTables=true
+
+# --- DeepSeek-OCR 配置 ---
+# 启用 DeepSeek OCR 处理 PDF
+deepseek-ocr.enabled=true
+deepseek-ocr.model=deepseek-ai/DeepSeek-OCR
 ----
 
 == 运行
