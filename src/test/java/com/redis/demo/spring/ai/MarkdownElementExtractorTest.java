@@ -3,8 +3,10 @@ package com.redis.demo.spring.ai;
 import com.redis.demo.spring.ai.util.*;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.util.List;
 
+import static com.redis.demo.spring.ai.util.MarkdownUrlReader.readMarkdownFromUrl;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class MarkdownElementExtractorTest {
@@ -138,6 +140,26 @@ public class MarkdownElementExtractorTest {
         boolean hasTableChunk = result.getChunks().stream()
                 .anyMatch(chunk -> "table".equals(chunk.getType()));
         assertTrue(hasTableChunk, "应该有表格类型的文本块");
+    }
+
+    @Test
+    public void testMarkdownProcessor_FullProcessing2() throws IOException {
+
+        String markdownUrl = "https://gitee.com/Tencent-BlueKing/bk-ci/raw/master/README.md";
+        String markdown = readMarkdownFromUrl(markdownUrl);
+
+        MarkdownProcessor processor = new MarkdownProcessor(128, "\n!?;。；！？", false);
+        ProcessingResult result = processor.processMarkdown(markdown);
+
+        assertNotNull(result);
+        assertNotNull(result.getChunks());
+        assertNotNull(result.getTables());
+
+        // 验证表格被提取
+        assertEquals(0, result.getTables().size());
+
+        // 验证有多个文本块
+        assertTrue(!result.getChunks().isEmpty());
     }
     
     @Test

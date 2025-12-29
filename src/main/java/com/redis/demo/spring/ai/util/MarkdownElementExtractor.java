@@ -17,12 +17,12 @@ public class MarkdownElementExtractor {
 
     private List<String> getSemanticBoundaries() {
         return Arrays.asList(
-                "\\n\\n+",      // 段落边界
-                "\\.# ",        // 标题边界
-                "```",          // 代码块边界
-                "\\n> ",        // 引用边界
-                "\\n[-*+] ",    // 列表边界
-                "\\n\\d+\\. "   // 有序列表边界
+                "\\n\\n+", // 段落边界
+                "\\.# ", // 标题边界
+                "```", // 代码块边界
+                "\\n> ", // 引用边界
+                "\\n[-*+] ", // 列表边界
+                "\\n\\d+\\. " // 有序列表边界
         );
     }
 
@@ -46,8 +46,7 @@ public class MarkdownElementExtractor {
                 "blockquote",
                 content.toString().trim(),
                 startLine,
-                endLine
-        );
+                endLine);
     }
 
     private MarkdownElement extractTextBlock(int startLine) {
@@ -80,19 +79,17 @@ public class MarkdownElementExtractor {
                 "text_block",
                 content.toString().trim(),
                 startLine,
-                endLine
-        );
+                endLine);
     }
 
     // 辅助方法：检查是否是块级元素
     private boolean isBlockElement(String line) {
-        return line.matches("^#{1,6}\\s+.*$") ||           // 标题
-                line.trim().startsWith("```") ||           // 代码块
-                line.matches("^\\s*[-*+]\\s+.*$") ||       // 无序列表
-                line.matches("^\\s*\\d+\\.\\s+.*$") ||     // 有序列表
-                line.trim().startsWith(">");               // 引用块
+        return line.matches("^#{1,6}\\s+.*$") || // 标题
+                line.trim().startsWith("```") || // 代码块
+                line.matches("^\\s*[-*+]\\s+.*$") || // 无序列表
+                line.matches("^\\s*\\d+\\.\\s+.*$") || // 有序列表
+                line.trim().startsWith(">"); // 引用块
     }
-
 
     private List<MarkdownElement> extractWithCustomDelimiter(String delimiter, boolean includeMeta) {
         List<MarkdownElement> sections = new ArrayList<>();
@@ -122,15 +119,13 @@ public class MarkdownElementExtractor {
                             "custom_delimiter",
                             part.trim(),
                             startLine,
-                            endLine
-                    ));
+                            endLine));
                 } else {
                     sections.add(new MarkdownElement(
                             "custom_delimiter",
                             part.trim(),
                             -1,
-                            -1
-                    ));
+                            -1));
                 }
             }
             lastEnd = matcher.end();
@@ -147,15 +142,13 @@ public class MarkdownElementExtractor {
                         "custom_delimiter",
                         lastPart.trim(),
                         startLine,
-                        endLine
-                ));
+                        endLine));
             } else {
                 sections.add(new MarkdownElement(
                         "custom_delimiter",
                         lastPart.trim(),
                         -1,
-                        -1
-                ));
+                        -1));
             }
         }
 
@@ -202,7 +195,10 @@ public class MarkdownElementExtractor {
 
         // 处理自定义分隔符 - 基于Python实现 [4](#3-3)
         if (delimiter != null && !delimiter.isEmpty()) {
-            return extractWithCustomDelimiter(delimiter, includeMeta);
+            String delimiterPattern = getDelimiters(delimiter);
+            if (!delimiterPattern.isEmpty()) {
+                return extractWithCustomDelimiter(delimiter, includeMeta);
+            }
         }
 
         // 按元素类型提取 - 基于Python实现 [5](#3-4)
@@ -248,8 +244,7 @@ public class MarkdownElementExtractor {
                 "header",
                 lines[startLine],
                 startLine,
-                startLine
-        );
+                startLine);
     }
 
     private MarkdownElement extractCodeBlock(int startLine) {
@@ -269,8 +264,7 @@ public class MarkdownElementExtractor {
                 "code_block",
                 content.toString().trim(),
                 startLine,
-                endLine
-        );
+                endLine);
     }
 
     private MarkdownElement extractListBlock(int startLine) {
@@ -294,8 +288,7 @@ public class MarkdownElementExtractor {
                 "list_block",
                 content.toString().trim(),
                 startLine,
-                endLine
-        );
+                endLine);
     }
 
     private boolean isListLine(String line, boolean isFirst) {
@@ -310,10 +303,3 @@ public class MarkdownElementExtractor {
         }
     }
 }
-
-
-
-
-
-
-
