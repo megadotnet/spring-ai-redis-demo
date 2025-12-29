@@ -5,6 +5,7 @@ target/
 !**/src/test/**/target/
 
 ### STS ###
+ocr-output
 .apt_generated
 .classpath
 .factorypath

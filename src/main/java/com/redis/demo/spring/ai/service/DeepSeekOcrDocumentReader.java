@@ -4,6 +4,9 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -82,7 +85,7 @@ public class DeepSeekOcrDocumentReader {
     /**
      * JPEG 压缩质量 (0.0-1.0)
      */
-    private static final float JPEG_QUALITY = 0.7f;
+    private static final float JPEG_QUALITY = 0.9f;
 
     /**
      * 并行处理的线程数
@@ -99,6 +102,11 @@ public class DeepSeekOcrDocumentReader {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final ExecutorService executorService;
+    
+    /**
+     * 保存OCR结果的目录
+     */
+    private String outputDirectory = "ocr-output";
 
     /**
      * 构造函数
@@ -130,6 +138,24 @@ public class DeepSeekOcrDocumentReader {
         if (apiKey == null || apiKey.trim().isEmpty()) {
             logger.warn("Siliconflow API Key is empty! Please set SILICONFLOW_KEY environment variable.");
         }
+    }
+    
+    /**
+     * 设置OCR结果保存目录
+     * 
+     * @param outputDirectory 保存目录路径
+     */
+    public void setOutputDirectory(String outputDirectory) {
+        this.outputDirectory = outputDirectory;
+    }
+    
+    /**
+     * 获取OCR结果保存目录
+     * 
+     * @return 保存目录路径
+     */
+    public String getOutputDirectory() {
+        return this.outputDirectory;
     }
 
     /**
@@ -218,6 +244,7 @@ public class DeepSeekOcrDocumentReader {
             }
         }
 
+        logger.info("Merged {} page(s) into a single Markdown document", results.size());
         return allMarkdown.toString();
     }
 
@@ -355,6 +382,9 @@ public class DeepSeekOcrDocumentReader {
             return documents;
         }
 
+        // 保存 Markdown 内容到本地文件
+        saveMarkdownToFile(markdownContent, filename);
+
         // 创建单个 Document，包含完整的 Markdown 内容
         // 后续由 HybridDocumentService 中的 TokenTextSplitter 进行分块
         Map<String, Object> metadata = new HashMap<>();
@@ -366,6 +396,35 @@ public class DeepSeekOcrDocumentReader {
         documents.add(document);
 
         return documents;
+    }
+    
+    /**
+     * 将 Markdown 内容保存到本地文件
+     * 
+     * @param markdownContent Markdown 内容
+     * @param originalFilename 原始文件名
+     */
+    private void saveMarkdownToFile(String markdownContent, String originalFilename) {
+        try {
+            // 创建输出目录（如果不存在）
+            Path outputPath = Paths.get(outputDirectory);
+            if (!Files.exists(outputPath)) {
+                Files.createDirectories(outputPath);
+            }
+            
+            // 生成 Markdown 文件名（替换原始文件的扩展名为 .md）
+            String baseFilename = originalFilename.replaceAll("\\.[^\\.]*$", "");
+            String markdownFilename = baseFilename + ".md";
+            Path markdownFilePath = outputPath.resolve(markdownFilename);
+            
+            // 写入 Markdown 文件
+            Files.write(markdownFilePath, markdownContent.getBytes("UTF-8"));
+            
+            logger.info("Markdown content saved to: {}", markdownFilePath.toString());
+            
+        } catch (IOException e) {
+            logger.error("Failed to save markdown content to file: {}", e.getMessage(), e);
+        }
     }
 
     /**
