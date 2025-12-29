@@ -2,12 +2,9 @@ package com.redis.demo.spring.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.Map;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 import org.springframework.ai.vectorstore.milvus.MilvusVectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,8 +16,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-
-
 
 /**
  * RagDataLoader 集成测试
@@ -46,8 +41,8 @@ class RagDataLoaderIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.ai.vectorstore.milvus.uri", 
-            () -> "http://" + milvus.getHost() + ":" + milvus.getMappedPort(19530));
+        registry.add("spring.ai.vectorstore.milvus.uri",
+                () -> "http://" + milvus.getHost() + ":" + milvus.getMappedPort(19530));
         registry.add("spring.ai.vectorstore.milvus.collection-name", () -> "test_beers_collection");
         registry.add("spring.ai.vectorstore.milvus.database-name", () -> "default");
     }

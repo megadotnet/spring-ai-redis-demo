@@ -3,11 +3,40 @@ package com.redis.demo.spring.ai.util;
 import java.util.*;
 import java.util.regex.*;
 
+/**
+ * Markdown处理工具类
+ * 用于解析Markdown文本，提取表格，并进行分块处理
+ */
 public class MarkdownProcessor {
 
-    // 配置参数
-    private int chunkTokenNum = 128;
-    private String delimiter = "\n!?;。；！？";
+    // 默认配置常量
+    private static final int DEFAULT_CHUNK_TOKEN_NUM = 128;
+    private static final String DEFAULT_DELIMITER = "\n!?;。；！？";
+    private static final int DEFAULT_CHARS_PER_TOKEN = 4;
+    private static final String CHUNK_TYPE_TABLE = "table";
+
+    // 正则表达式模式常量
+    // 标准Markdown表格模式
+    private static final String BORDER_TABLE_REGEX = "(?:\\n|^)(?:\\|.*?\\|.*?\\|.*?\\n)(?:\\|(?:\\s*[:-]+[-| :]*\\s*)\\|.*?\\n)(?:\\|.*?\\|.*?\\|.*?\\n)+";
+    // 无边框表格模式
+    private static final String NO_BORDER_TABLE_REGEX = "(?:\\n|^)(?:\\S.*?\\|.*?\\n)(?:(?:\\s*[:-]+[-| :]*\\s*).*?\\n)(?:\\S.*?\\|.*?\\n)+";
+    // HTML表格模式
+    private static final String HTML_TABLE_REGEX = "(?:\\n|^)\\s*(?:(?:<html[^>]*>\\s*<body[^>]*>\\s*<table[^>]*>.*?</table>\\s*</body>\\s*</html>)|(?:<body[^>]*>\\s*<table[^>]*>.*?</table>\\s*</body>)|(?:<table[^>]*>.*?</table>))\\s*(?=\\n|$)";
+    // 表格分隔行模式 (|---|---|)
+    private static final String TABLE_SEPARATOR_REGEX = "^\\|\\s*[:\\-\\|\\s]*\\|$";
+    // HTML标签清理模式
+    private static final Pattern HTML_TAG_CLEANER_PATTERN = Pattern.compile("<(/?)(\\w+)[^>]*>",
+            Pattern.CASE_INSENSITIVE);
+
+    // 编译好的Pattern对象
+    private static final Pattern BORDER_TABLE_PATTERN = Pattern.compile(BORDER_TABLE_REGEX, Pattern.MULTILINE);
+    private static final Pattern NO_BORDER_TABLE_PATTERN = Pattern.compile(NO_BORDER_TABLE_REGEX, Pattern.MULTILINE);
+    private static final Pattern HTML_TABLE_PATTERN = Pattern.compile(HTML_TABLE_REGEX,
+            Pattern.MULTILINE | Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
+
+    // 实例配置参数
+    private int chunkTokenNum = DEFAULT_CHUNK_TOKEN_NUM;
+    private String delimiter = DEFAULT_DELIMITER;
     private boolean separateTables = true;
 
     public MarkdownProcessor(int chunkTokenNum, String delimiter, boolean separateTables) {
@@ -16,48 +45,58 @@ public class MarkdownProcessor {
         this.separateTables = separateTables;
     }
 
-    // 主处理方法
+    /**
+     * 主处理方法：处理Markdown文本，提取表格并分块
+     *
+     * @param markdownText 输入的Markdown文本
+     * @return 处理结果，包含分块列表和提取的表格
+     */
     public ProcessingResult processMarkdown(String markdownText) {
         // 1. 表格提取与分离
+        // 先将表格从文本中提取出来，避免干扰后续的文本分块
         TableExtractionResult tableResult = extractTablesAndRemainder(markdownText);
 
         // 2. 元素提取
+        // 对剩余的非表格文本进行元素提取（如段落、列表等）
         MarkdownElementExtractor extractor = new MarkdownElementExtractor(tableResult.getRemainder());
         List<MarkdownElement> elements = extractor.extractElements(delimiter, true);
 
         // 3. 分块处理
+        // 将提取的元素和表格合并并按照token限制进行分块
         List<TextChunk> chunks = processChunks(elements, tableResult.getTables());
 
         return new ProcessingResult(chunks, tableResult.getTables());
     }
 
+    /**
+     * 提取表格并返回剩余文本
+     *
+     * @param markdownText 输入文本
+     * @return 包含处理后文本和表格列表的结果对象
+     */
     private TableExtractionResult extractTablesAndRemainder(String markdownText) {
         List<String> tables = new ArrayList<>();
         String workingText = markdownText;
 
-        // 标准Markdown表格模式 - 基于Python实现 [1](#3-0)
-        Pattern borderTablePattern = Pattern.compile(
-                "(?:\\n|^)(?:\\|.*?\\|.*?\\|.*?\\n)(?:\\|(?:\\s*[:-]+[-| :]*\\s*)\\|.*?\\n)(?:\\|.*?\\|.*?\\|.*?\\n)+",
-                Pattern.MULTILINE);
-
-        // 无边框表格模式 - 基于Python实现 [2](#3-1)
-        Pattern noBorderTablePattern = Pattern.compile(
-                "(?:\\n|^)(?:\\S.*?\\|.*?\\n)(?:(?:\\s*[:-]+[-| :]*\\s*).*?\\n)(?:\\S.*?\\|.*?\\n)+",
-                Pattern.MULTILINE);
-
-        // HTML表格模式 - 基于Python实现 [3](#3-2)
-        Pattern htmlTablePattern = Pattern.compile(
-                "(?:\\n|^)\\s*(?:(?:<html[^>]*>\\s*<body[^>]*>\\s*<table[^>]*>.*?</table>\\s*</body>\\s*</html>)|(?:<body[^>]*>\\s*<table[^>]*>.*?</table>\\s*</body>)|(?:<table[^>]*>.*?</table>))\\s*(?=\\n|$)",
-                Pattern.MULTILINE | Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
-
-        // 提取表格
-        workingText = extractTables(workingText, borderTablePattern, tables);
-        workingText = extractTables(workingText, noBorderTablePattern, tables);
-        workingText = extractTables(workingText, htmlTablePattern, tables);
+        // 依次提取不同类型的表格
+        // 1. 提取标准Markdown表格
+        workingText = extractTables(workingText, BORDER_TABLE_PATTERN, tables);
+        // 2. 提取无边框表格
+        workingText = extractTables(workingText, NO_BORDER_TABLE_PATTERN, tables);
+        // 3. 提取HTML表格
+        workingText = extractTables(workingText, HTML_TABLE_PATTERN, tables);
 
         return new TableExtractionResult(workingText, tables);
     }
 
+    /**
+     * 使用指定模式提取表格
+     *
+     * @param text    输入文本
+     * @param pattern 匹配模式
+     * @param tables  用于存储提取到的表格的列表
+     * @return 移除表格后的文本
+     */
     private String extractTables(String text, Pattern pattern, List<String> tables) {
         Matcher matcher = pattern.matcher(text);
         StringBuffer result = new StringBuffer();
@@ -67,10 +106,10 @@ public class MarkdownProcessor {
             tables.add(table);
 
             if (separateTables) {
-                // 分离表格，替换为空行
+                // 如果配置为分离表格，则在原文中替换为空行
                 matcher.appendReplacement(result, "\n\n");
             } else {
-                // 保留表格，转换为HTML
+                // 如果不分离，保留表格但转换为HTML格式以便统一处理
                 String htmlTable = convertTableToHtml(table);
                 matcher.appendReplacement(result, Matcher.quoteReplacement(htmlTable + "\n\n"));
             }
@@ -80,18 +119,25 @@ public class MarkdownProcessor {
         return result.toString();
     }
 
+    /**
+     * 处理分块逻辑
+     *
+     * @param elements 提取的文本元素
+     * @param tables   提取的表格
+     * @return 最终的文本块列表
+     */
     private List<TextChunk> processChunks(List<MarkdownElement> elements, List<String> tables) {
         List<TextChunk> chunks = new ArrayList<>();
 
-        // 处理文本元素分块 - 基于Python实现 [6](#3-5)
+        // 处理文本元素分块
         for (MarkdownElement element : elements) {
             String content = element.getContent();
 
-            // 计算token数量（简化实现）
+            // 计算token数量（简化估算）
             int tokenCount = estimateTokenCount(content);
 
             if (tokenCount <= chunkTokenNum) {
-                // 单个元素作为一块
+                // 如果元素大小在限制范围内，直接作为一个块
                 TextChunk chunk = new TextChunk(
                         content,
                         element.getType(),
@@ -99,18 +145,18 @@ public class MarkdownProcessor {
                         element.getEndLine());
                 chunks.add(chunk);
             } else {
-                // 需要进一步分割
+                // 如果元素过大，需要进一步按分隔符分割
                 List<TextChunk> subChunks = splitContent(content, element);
                 chunks.addAll(subChunks);
             }
         }
 
-        // 处理表格 - 基于Python实现 [7](#3-6)
+        // 处理表格，将表格作为单独的块添加
         for (String table : tables) {
             String htmlTable = convertTableToHtml(table);
             TextChunk tableChunk = new TextChunk(
                     htmlTable,
-                    "table",
+                    CHUNK_TYPE_TABLE,
                     -1,
                     -1);
             chunks.add(tableChunk);
@@ -121,19 +167,21 @@ public class MarkdownProcessor {
 
     /**
      * 将Markdown表格转换为HTML格式
-     * 基于Python实现 [1](#6-0)
+     *
+     * @param markdownTable Markdown格式的表格字符串
+     * @return HTML格式的表格字符串
      */
     public String convertTableToHtml(String markdownTable) {
         if (markdownTable == null || markdownTable.trim().isEmpty()) {
             return "";
         }
 
-        // 检查是否已经是HTML表格
+        // 检查是否已经是HTML表格，如果是则进行清理
         if (markdownTable.trim().toLowerCase().contains("<table>")) {
             return cleanHtmlTable(markdownTable);
         }
 
-        // 解析Markdown表格
+        // 解析Markdown表格内容
         List<String[]> tableData = parseMarkdownTable(markdownTable);
         if (tableData.isEmpty()) {
             return "";
@@ -148,7 +196,7 @@ public class MarkdownProcessor {
             html.append("  <tr>\n");
 
             for (String cell : row) {
-                String tag = (i == 0) ? "th" : "td"; // 第一行作为表头
+                String tag = (i == 0) ? "th" : "td"; // 第一行默认为表头
                 html.append("    <").append(tag).append(">")
                         .append(escapeHtml(cell.trim()))
                         .append("</").append(tag).append(">\n");
@@ -163,7 +211,9 @@ public class MarkdownProcessor {
 
     /**
      * 解析Markdown表格为二维数组
-     * 基于Python实现 [2](#6-1)
+     * 
+     * @param markdownTable Markdown表格字符串
+     * @return 表格数据的二维列表
      */
     private List<String[]> parseMarkdownTable(String markdownTable) {
         List<String[]> tableData = new ArrayList<>();
@@ -172,18 +222,18 @@ public class MarkdownProcessor {
         for (String line : lines) {
             line = line.trim();
 
-            // 跳过分隔行 (|---|---|)
-            if (line.matches("^\\|\\s*[:\\-\\|\\s]*\\|$")) {
+            // 跳过Markdown表格的分隔行 (如 |---|---|)
+            if (line.matches(TABLE_SEPARATOR_REGEX)) {
                 continue;
             }
 
-            // 处理表格行
+            // 处理有效的表格行
             if (line.startsWith("|") && line.endsWith("|")) {
-                // 移除首尾的|，然后按|分割
+                // 移除首尾的|，然后按|分割单元格
                 String content = line.substring(1, line.length() - 1);
                 String[] cells = content.split("\\|");
 
-                // 清理单元格内容
+                // 清理每个单元格的内容
                 for (int i = 0; i < cells.length; i++) {
                     cells[i] = cells[i].trim();
                 }
@@ -196,18 +246,19 @@ public class MarkdownProcessor {
     }
 
     /**
-     * 清理HTML表格标签，移除属性
-     * 基于Python实现 [3](#6-2)
+     * 清理HTML表格标签，移除所有属性，只保留标签名
+     *
+     * @param htmlTable 原始HTML表格
+     * @return 清理后的HTML表格
      */
     private String cleanHtmlTable(String htmlTable) {
-        // 移除HTML标签中的属性，只保留标签名
-        Pattern tagPattern = Pattern.compile("<(/?)(\\w+)[^>]*>", Pattern.CASE_INSENSITIVE);
-        Matcher matcher = tagPattern.matcher(htmlTable);
+        Matcher matcher = HTML_TAG_CLEANER_PATTERN.matcher(htmlTable);
         StringBuffer result = new StringBuffer();
 
         while (matcher.find()) {
             String closingSlash = matcher.group(1);
             String tagName = matcher.group(2);
+            // 替换为不带属性的纯标签
             matcher.appendReplacement(result, "<" + closingSlash + tagName + ">");
         }
         matcher.appendTail(result);
@@ -216,7 +267,10 @@ public class MarkdownProcessor {
     }
 
     /**
-     * HTML转义
+     * HTML特殊字符转义
+     *
+     * @param text 原始文本
+     * @return 转义后的文本
      */
     private String escapeHtml(String text) {
         if (text == null)
@@ -228,10 +282,17 @@ public class MarkdownProcessor {
                 .replace("'", "&#39;");
     }
 
+    /**
+     * 将过长的内容进行分割
+     *
+     * @param content         内容文本
+     * @param originalElement 原始元素信息，用于保留元数据
+     * @return 分割后的文本块列表
+     */
     private List<TextChunk> splitContent(String content, MarkdownElement originalElement) {
         List<TextChunk> chunks = new ArrayList<>();
 
-        // 按语义边界分割 - 基于Python实现 [8](#3-7)
+        // 按分隔符进行语义分割
         String[] parts = content.split("(?<=" + Pattern.quote(delimiter) + ")");
 
         StringBuilder currentChunk = new StringBuilder();
@@ -240,10 +301,12 @@ public class MarkdownProcessor {
         for (String part : parts) {
             int partTokens = estimateTokenCount(part);
 
+            // 如果当前块加上新部分未超过限制，则累加
             if (currentTokens + partTokens <= chunkTokenNum) {
                 currentChunk.append(part);
                 currentTokens += partTokens;
             } else {
+                // 否则保存当前块，并开始新块
                 if (currentChunk.length() > 0) {
                     chunks.add(new TextChunk(
                             currentChunk.toString().trim(),
@@ -256,6 +319,7 @@ public class MarkdownProcessor {
             }
         }
 
+        // 处理最后剩余的部分
         if (currentChunk.length() > 0) {
             chunks.add(new TextChunk(
                     currentChunk.toString().trim(),
@@ -267,9 +331,16 @@ public class MarkdownProcessor {
         return chunks;
     }
 
+    /**
+     * 估算文本的Token数量
+     *
+     * @param text 输入文本
+     * @return 估算的Token数
+     */
     private int estimateTokenCount(String text) {
-        // 简化的token计算，实际应用中应使用更精确的方法
-        return text.length() / 4; // 假设平均4个字符一个token
+        // 简化的token计算：假设平均每4个字符为一个Token
+        // 实际应用中建议使用更精确的Tokenizer
+        return text.length() / DEFAULT_CHARS_PER_TOKEN;
     }
 
 }

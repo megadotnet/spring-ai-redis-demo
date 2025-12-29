@@ -13,6 +13,4 @@ public class ProcessingResult {
         this.chunks = chunks;
         this.tables = tables;
     }
-
-    // getters...
 }
