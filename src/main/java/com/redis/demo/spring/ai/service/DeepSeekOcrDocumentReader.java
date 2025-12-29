@@ -75,7 +75,7 @@ public class DeepSeekOcrDocumentReader {
     /**
      * OCR 提示词，要求模型将图片转换为 Markdown
      */
-    private static final String OCR_PROMPT = "Convert this document page to markdown format. Preserve the document structure including headings, paragraphs, tables, and lists. Output only the markdown content without any additional explanation.";
+    private static final String OCR_PROMPT = "Convert the document to markdown.";
 
     /**
      * PDF 渲染 DPI (降低以减小图片体积)
