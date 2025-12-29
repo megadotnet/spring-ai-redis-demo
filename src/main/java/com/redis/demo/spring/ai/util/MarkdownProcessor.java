@@ -2,9 +2,6 @@ package com.redis.demo.spring.ai.util;
 
 import java.util.*;
 import java.util.regex.*;
-import org.commonmark.node.*;
-import org.commonmark.parser.Parser;
-import org.commonmark.renderer.html.HtmlRenderer;
 
 public class MarkdownProcessor {
 
