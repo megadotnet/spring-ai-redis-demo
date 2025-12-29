@@ -104,7 +104,6 @@
             <version>2.15.1</version>
         </dependency>
         
-        <!-- TestContainers 用于集成测试 -->
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>

@@ -1,4 +1,4 @@
-package com.redis.demo.spring.ai;
+package com.redis.demo.spring.ai.util;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,20 +16,21 @@ import java.nio.file.Path;
  * 专门处理文件下载的工具类
  */
 public class FileDownloader {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(FileDownloader.class);
-    
+
     // 使用一个示例数据URL替代原来的无效URL
     public static final String DATA_BEERS_JSON_GZ = "https://arxiv.org/pdf/2506.10380";
 
     /**
      * 下载文件到临时文件并返回Resource
+     * 
      * @return 下载文件的Resource表示
      * @throws IOException 文件下载异常
      */
     public Resource downloadDataFile() throws IOException {
         String fileExtension;
-        
+
         // 检查是否是arxiv.org的URL
         if (DATA_BEERS_JSON_GZ.contains("arxiv.org")) {
             // 对于arxiv.org链接，使用.pdf作为扩展名
@@ -47,13 +48,14 @@ public class FileDownloader {
 
         URL downloadUrl = new URL(DATA_BEERS_JSON_GZ);
         URLConnection connection = downloadUrl.openConnection();
-        
+
         // 设置连接超时
         connection.setConnectTimeout(10000); // 10s
         connection.setReadTimeout(60000); // 60s
-        
+
         // 设置用户代理以避免被识别为自动化请求
-        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+        connection.setRequestProperty("User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
         connection.setRequestProperty("Accept", "application/json, text/plain, */*");
         connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
         connection.setRequestProperty("Accept-Encoding", "gzip, deflate, br");
@@ -63,20 +65,20 @@ public class FileDownloader {
         // 强制信任所有证书以解决SSL问题
         if (connection instanceof javax.net.ssl.HttpsURLConnection) {
             javax.net.ssl.HttpsURLConnection httpsConnection = (javax.net.ssl.HttpsURLConnection) connection;
-            
+
             // 创建信任所有证书的TrustManager
             javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
-                new javax.net.ssl.X509TrustManager() {
-                    public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-                        return null;
+                    new javax.net.ssl.X509TrustManager() {
+                        public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                            return null;
+                        }
+
+                        public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {
+                        }
+
+                        public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {
+                        }
                     }
-                    
-                    public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {
-                    }
-                    
-                    public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {
-                    }
-                }
             };
 
             // 创建SSL上下文并设置信任管理器
@@ -84,7 +86,7 @@ public class FileDownloader {
                 javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("SSL");
                 sc.init(null, trustAllCerts, new java.security.SecureRandom());
                 httpsConnection.setSSLSocketFactory(sc.getSocketFactory());
-                
+
                 // 设置主机名验证器以接受所有主机名
                 httpsConnection.setHostnameVerifier(new javax.net.ssl.HostnameVerifier() {
                     public boolean verify(String hostname, javax.net.ssl.SSLSession session) {
@@ -100,10 +102,11 @@ public class FileDownloader {
         if (connection instanceof java.net.HttpURLConnection) {
             java.net.HttpURLConnection httpConnection = (java.net.HttpURLConnection) connection;
             int responseCode = httpConnection.getResponseCode();
-            
+
             if (responseCode >= 400) {
                 logger.error("HTTP error response code: {}", responseCode);
-                throw new IOException("Server returned HTTP response code: " + responseCode + " for URL: " + DATA_BEERS_JSON_GZ);
+                throw new IOException(
+                        "Server returned HTTP response code: " + responseCode + " for URL: " + DATA_BEERS_JSON_GZ);
             }
         }
 
@@ -117,6 +120,7 @@ public class FileDownloader {
 
     /**
      * 提取文件扩展名的辅助方法
+     * 
      * @param url URL地址
      * @return 文件扩展名
      */

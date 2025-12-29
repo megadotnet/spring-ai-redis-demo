@@ -21,16 +21,12 @@ import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
-
-
 @Component
 public class RagDataLoader implements ApplicationRunner {
 
 	// 使用一个示例数据URL替代原来的无效URL
 	public static final String DATA_BEERS_JSON_GZ = "https://arxiv.org/pdf/2506.10380";
 	private static final Logger logger = LoggerFactory.getLogger(RagDataLoader.class);
-
-
 
 	// 定义关键字数组
 	public static final String[] KEYS = { "name", "abv", "ibu", "description" };
@@ -52,10 +48,11 @@ public class RagDataLoader implements ApplicationRunner {
 	private final DocumentCountProvider documentCountProvider;
 
 	// 构造函数，注入VectorStore实例和文档数量提供者
-	public RagDataLoader(VectorStore vectorStore, DocumentCountProvider documentCountProvider,HybridDocumentService hybridDocumentService) {
+	public RagDataLoader(VectorStore vectorStore, DocumentCountProvider documentCountProvider,
+			HybridDocumentService hybridDocumentService) {
 		this.vectorStore = vectorStore;
 		this.documentCountProvider = documentCountProvider;
-		this.hybridDocumentService=hybridDocumentService;
+		this.hybridDocumentService = hybridDocumentService;
 	}
 
 	// 在RagDataLoader类中添加批次大小常量
@@ -125,7 +122,8 @@ public class RagDataLoader implements ApplicationRunner {
 		}
 
 		// 检查文档数量，如果已有足够数据则跳过加载
-		if (checkDbCollectionRecords()) return;
+		if (checkDbCollectionRecords())
+			return;
 
 		// 检查文件是否有效
 		if (file == null || !file.exists()) {
@@ -133,7 +131,7 @@ public class RagDataLoader implements ApplicationRunner {
 			return;
 		}
 
-		List<Document> documents=null;
+		List<Document> documents = null;
 
 		// 如果数据资源是.gz格式，则解压
 		InputStreamResource inputStreamResource = null;
@@ -146,7 +144,8 @@ public class RagDataLoader implements ApplicationRunner {
 			ZipInputStream zipinputStream = new ZipInputStream(file.getInputStream());
 			zipinputStream.getNextEntry();
 			inputStreamResource = new InputStreamResource(zipinputStream, "beers.json");
-		} else if (file.getFilename() != null && (file.getFilename().endsWith(".docx") ||file.getFilename().endsWith(".pdf"))) {
+		} else if (file.getFilename() != null
+				&& (file.getFilename().endsWith(".docx") || file.getFilename().endsWith(".pdf"))) {
 			documents = hybridDocumentService.loadDocDirect(file);
 			logger.info("Creating Embeddings...");
 
@@ -163,7 +162,6 @@ public class RagDataLoader implements ApplicationRunner {
 				logger.error("Resource does not exist: {}", resourceToUse.getDescription());
 				return;
 			}
-
 
 			// 直接使用 Resource 对象，而不是获取文件路径
 			documents = hybridDocumentService.loadDocumentFromZip(resourceToUse);
@@ -198,10 +196,8 @@ public class RagDataLoader implements ApplicationRunner {
 	}
 
 	private Resource downloadDataFile() throws IOException {
-		com.redis.demo.spring.ai.FileDownloader downloader = new com.redis.demo.spring.ai.FileDownloader();
+		com.redis.demo.spring.ai.util.FileDownloader downloader = new com.redis.demo.spring.ai.util.FileDownloader();
 		return downloader.downloadDataFile();
 	}
-
-
 
 }
