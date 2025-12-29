@@ -34,7 +34,6 @@ public class MarkdownProcessor {
         return new ProcessingResult(chunks, tableResult.getTables());
     }
 
-
     private TableExtractionResult extractTablesAndRemainder(String markdownText) {
         List<String> tables = new ArrayList<>();
         String workingText = markdownText;
@@ -42,20 +41,17 @@ public class MarkdownProcessor {
         // 标准Markdown表格模式 - 基于Python实现 [1](#3-0)
         Pattern borderTablePattern = Pattern.compile(
                 "(?:\\n|^)(?:\\|.*?\\|.*?\\|.*?\\n)(?:\\|(?:\\s*[:-]+[-| :]*\\s*)\\|.*?\\n)(?:\\|.*?\\|.*?\\|.*?\\n)+",
-                Pattern.MULTILINE
-        );
+                Pattern.MULTILINE);
 
         // 无边框表格模式 - 基于Python实现 [2](#3-1)
         Pattern noBorderTablePattern = Pattern.compile(
                 "(?:\\n|^)(?:\\S.*?\\|.*?\\n)(?:(?:\\s*[:-]+[-| :]*\\s*).*?\\n)(?:\\S.*?\\|.*?\\n)+",
-                Pattern.MULTILINE
-        );
+                Pattern.MULTILINE);
 
         // HTML表格模式 - 基于Python实现 [3](#3-2)
         Pattern htmlTablePattern = Pattern.compile(
                 "(?:\\n|^)\\s*(?:(?:<html[^>]*>\\s*<body[^>]*>\\s*<table[^>]*>.*?</table>\\s*</body>\\s*</html>)|(?:<body[^>]*>\\s*<table[^>]*>.*?</table>\\s*</body>)|(?:<table[^>]*>.*?</table>))\\s*(?=\\n|$)",
-                Pattern.MULTILINE | Pattern.DOTALL | Pattern.CASE_INSENSITIVE
-        );
+                Pattern.MULTILINE | Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
 
         // 提取表格
         workingText = extractTables(workingText, borderTablePattern, tables);
@@ -79,14 +75,13 @@ public class MarkdownProcessor {
             } else {
                 // 保留表格，转换为HTML
                 String htmlTable = convertTableToHtml(table);
-                matcher.appendReplacement(result, htmlTable + "\n\n");
+                matcher.appendReplacement(result, Matcher.quoteReplacement(htmlTable + "\n\n"));
             }
         }
         matcher.appendTail(result);
 
         return result.toString();
     }
-
 
     private List<TextChunk> processChunks(List<MarkdownElement> elements, List<String> tables) {
         List<TextChunk> chunks = new ArrayList<>();
@@ -104,8 +99,7 @@ public class MarkdownProcessor {
                         content,
                         element.getType(),
                         element.getStartLine(),
-                        element.getEndLine()
-                );
+                        element.getEndLine());
                 chunks.add(chunk);
             } else {
                 // 需要进一步分割
@@ -121,14 +115,12 @@ public class MarkdownProcessor {
                     htmlTable,
                     "table",
                     -1,
-                    -1
-            );
+                    -1);
             chunks.add(tableChunk);
         }
 
         return chunks;
     }
-
 
     /**
      * 将Markdown表格转换为HTML格式
@@ -230,7 +222,8 @@ public class MarkdownProcessor {
      * HTML转义
      */
     private String escapeHtml(String text) {
-        if (text == null) return "";
+        if (text == null)
+            return "";
         return text.replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
@@ -259,8 +252,7 @@ public class MarkdownProcessor {
                             currentChunk.toString().trim(),
                             originalElement.getType(),
                             originalElement.getStartLine(),
-                            originalElement.getEndLine()
-                    ));
+                            originalElement.getEndLine()));
                 }
                 currentChunk = new StringBuilder(part);
                 currentTokens = partTokens;
@@ -272,8 +264,7 @@ public class MarkdownProcessor {
                     currentChunk.toString().trim(),
                     originalElement.getType(),
                     originalElement.getStartLine(),
-                    originalElement.getEndLine()
-            ));
+                    originalElement.getEndLine()));
         }
 
         return chunks;

@@ -161,6 +161,28 @@ public class MarkdownElementExtractorTest {
         // 验证有多个文本块
         assertTrue(!result.getChunks().isEmpty());
     }
+
+    @Test
+    public void testMarkdownProcessor_FullProcessingRemoteTable() throws IOException {
+
+        String markdownUrl = "https://gitee.com/JD-opensource/sbom-tool/raw/master/README_zh.md";
+        String markdown = readMarkdownFromUrl(markdownUrl);
+
+        MarkdownProcessor processor = new MarkdownProcessor(128, "\n!?;。；！？", false);
+        ProcessingResult result = processor.processMarkdown(markdown);
+
+        assertNotNull(result);
+        assertNotNull(result.getChunks());
+        assertNotNull(result.getTables());
+
+        // 验证表格被提取
+        assertEquals(10, result.getTables().size());
+
+        // 验证有多个文本块
+        assertTrue(!result.getChunks().isEmpty());
+    }
+
+
     
     @Test
     public void testExtractWithCustomDelimiter() {
