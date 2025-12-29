@@ -201,6 +201,22 @@ public class MarkdownElementExtractorTest {
         assertTrue(fullContent.contains("第三部分"));
     }
 
+
+    @Test
+    public void testMarkdownProcessor_FullProcessingImage() throws IOException {
+
+        String markdownUrl = "https://gitee.com/fit2cloud-feizhiyun/MaxKB/raw/v2/README_CN.md";
+        String markdown = readMarkdownFromUrl(markdownUrl);
+
+        // 提取图片引用
+        ImageExtractor imageExtractor = new ImageExtractor();
+        List<ImageReference> imageRefs = imageExtractor.extractImageReferences(markdown);
+
+        // 验证提取的图片
+        assertNotNull(imageRefs);
+        assertEquals(9, imageRefs.size());
+    }
+
     @Test
     public void testImageAssociator() {
         String markdownText = "# 标题\n\n" +
