@@ -19,6 +19,10 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 
+/**
+ * RAG 检索增强生成服务
+ * 支持三种检索模式：纯向量检索、向量检索+Rerank、混合检索（BM25+向量）
+ */
 public class RagService {
 
 	private static final Logger logger = LoggerFactory.getLogger(RagService.class);
@@ -35,37 +39,60 @@ public class RagService {
 	@Value("${rerank.topN:5}")
 	private int rerankTopN;
 
+	@Value("${hybrid.search.enabled:false}")
+	private boolean hybridSearchEnabled;
+
 	private final ChatModel chatModel;
 
 	private final VectorStore store;
 
 	private final RerankService rerankService;
 
+	private final HybridSearchService hybridSearchService;
+
 	/**
-	 * 构造函数（不启用 rerank）
+	 * 构造函数（不启用 rerank 和混合检索）
 	 */
 	public RagService(ChatModel chatModel, VectorStore store) {
-		this(chatModel, store, null);
+		this(chatModel, store, null, null);
 	}
 
 	/**
-	 * 构造函数（支持可选的 rerank 服务）
+	 * 构造函数（支持可选的 rerank 服务，不启用混合检索）
 	 */
 	public RagService(ChatModel chatModel, VectorStore store, RerankService rerankService) {
+		this(chatModel, store, rerankService, null);
+	}
+
+	/**
+	 * 构造函数（完整版：支持可选的 rerank 服务和混合检索服务）
+	 */
+	public RagService(ChatModel chatModel, VectorStore store, RerankService rerankService,
+			HybridSearchService hybridSearchService) {
 		this.chatModel = chatModel;
 		this.store = store;
 		this.rerankService = rerankService;
+		this.hybridSearchService = hybridSearchService;
 	}
 
 	// tag::retrieve[]
 	public Generation retrieve(String message) {
-		// Create a search request to find relevant documents
-		SearchRequest request = SearchRequest.builder().query(message).topK(topK).build();
-		// Query vector store for the top K documents most relevant to the input message
-		List<Document> docs = store.similaritySearch(request);
-		logger.info("Retrieved {} documents from vector store", docs.size());
+		List<Document> docs;
 
-		// 可选的 rerank 精排流程
+		// 根据配置选择检索策略
+		if (hybridSearchEnabled && hybridSearchService != null) {
+			// 混合检索模式：BM25 + 向量检索
+			logger.info("Using hybrid search (BM25 + vector) mode");
+			docs = hybridSearchService.hybridSearch(message, topK);
+			logger.info("Retrieved {} documents from hybrid search", docs.size());
+		} else {
+			// 纯向量检索模式
+			SearchRequest request = SearchRequest.builder().query(message).topK(topK).build();
+			docs = store.similaritySearch(request);
+			logger.info("Retrieved {} documents from vector store", docs.size());
+		}
+
+		// 可选的 rerank 精排流程（对两种检索模式都生效）
 		if (rerankEnabled && rerankService != null) {
 			logger.info("Rerank is enabled, performing rerank with topN={}", rerankTopN);
 			docs = rerankService.rerank(message, docs, rerankTopN);
@@ -73,12 +100,8 @@ public class RagService {
 		}
 
 		Message systemMessage = getSystemMessage(docs);
-		// logger.trace("RAG return : {}", systemMessage.getText());
 		UserMessage userMessage = new UserMessage(message);
-		// Assemble the complete prompt using a template
 		Prompt prompt = new Prompt(List.of(systemMessage, userMessage));
-		//logger.info("Final System prompt: {}", prompt.getSystemMessage());
-		// Call the autowired chat model with the prompt
 		ChatResponse response = chatModel.call(prompt);
 		return response.getResult();
 	}
@@ -86,11 +109,8 @@ public class RagService {
 
 	// 根据相似的文档列表获取系统消息
 	private Message getSystemMessage(List<Document> similarDocuments) {
-		// 将相似的文档列表中的文本拼接成一个字符串
 		String documents = similarDocuments.stream().map(doc -> doc.getText()).collect(Collectors.joining("\n"));
-		// 创建一个系统提示模板，使用系统啤酒提示
 		SystemPromptTemplate systemPromptTemplate = new SystemPromptTemplate(systemBeerPrompt);
-		// 使用模板创建消息，将拼接的文档字符串作为参数
 		return systemPromptTemplate.createMessage(Map.of("documents", documents));
 	}
 

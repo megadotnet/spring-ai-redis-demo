@@ -10,10 +10,12 @@ import java.util.zip.ZipInputStream;
 
 import com.redis.demo.spring.ai.service.DocumentCountProvider;
 import com.redis.demo.spring.ai.service.HybridDocumentService;
+import com.redis.demo.spring.ai.service.HybridSearchService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -46,6 +48,10 @@ public class RagDataLoader implements ApplicationRunner {
 
 	// 文档数量提供者
 	private final DocumentCountProvider documentCountProvider;
+
+	// 混合检索服务（可选，用于 BM25 索引构建）
+	@Autowired(required = false)
+	private HybridSearchService hybridSearchService;
 
 	// 构造函数，注入VectorStore实例和文档数量提供者
 	public RagDataLoader(VectorStore vectorStore, DocumentCountProvider documentCountProvider,
@@ -176,6 +182,14 @@ public class RagDataLoader implements ApplicationRunner {
 		}
 		vectorStore.add(documents);
 		logger.info("Added {} documents to vector store", documents.size());
+
+		// 构建 BM25 索引（当混合检索启用时）
+		if (hybridSearchService != null) {
+			logger.info("Building BM25 index for hybrid search...");
+			hybridSearchService.indexForBM25(documents);
+			logger.info("BM25 index built successfully with {} documents", documents.size());
+		}
+
 		logger.info("Embeddings created.");
 	}
 
