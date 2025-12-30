@@ -80,11 +80,21 @@ spring-ai-redis-demo/
    - 使用 Milvus Vector Database 进行相似性搜索
    - 支持 Top-K 查询返回最相关的文档
 
-2. **嵌入生成**：
+2. **混合检索**：
+   - BM25 关键词检索：基于 Apache Lucene 的内存索引
+   - 向量语义检索：基于 Milvus 的嵌入向量相似度
+   - RRF (Reciprocal Rank Fusion) 算法融合两路结果
+
+3. **BM25 索引持久化**：
+   - 使用 Redis Cloud 存储文档数据
+   - 应用重启后自动从 Redis 恢复 BM25 索引
+   - OOM 错误时自动降级为内存模式
+
+4. **嵌入生成**：
    - 使用 TransformersEmbeddingClient 生成文本嵌入
    - 基于 all-MiniLM-L6-v2 模型
 
-3. **提示工程**：
+5. **提示工程**：
    - 使用系统提示模板指导 LLM 回答
    - 将检索到的文档作为上下文提供给 LLM
 
@@ -99,10 +109,20 @@ spring-ai-redis-demo/
 
 2. **RagService**：
    - 实现核心 RAG 逻辑
-   - 使用 similaritySearch 方法从 Redis 检索相关文档
+   - 支持纯向量检索和混合检索两种模式
    - 构造提示并调用 LLM 生成回答
 
-3. **RagController**：
+3. **HybridSearchService**：
+   - 实现混合检索融合逻辑
+   - 并行执行 BM25 和向量检索
+   - 使用 RRF 算法融合结果
+
+4. **BM25SearchService**：
+   - 基于 Lucene 的 BM25 全文检索
+   - 支持 Redis 持久化和索引恢复
+   - OOM 错误时自动降级
+
+5. **RagController**：
    - 提供 REST API 接口
    - 处理聊天会话和消息传递
 
@@ -159,8 +179,9 @@ spring-ai-redis-demo/
 
 1. **后端技术**：
    - Spring Boot 3.2.3
-   - Spring AI 0.8.1
-   - Redis/Jedis 5.1.0
+   - Spring AI 1.0.0
+   - Apache Lucene 9.11.1 (BM25 全文检索)
+   - Spring Data Redis (索引持久化)
    - Java 17
 
 2. **前端技术**：
@@ -218,6 +239,8 @@ spring-ai-redis-demo/
 |--------|------|----------|----------|
 | 后端框架 | Spring Boot + Spring AI | FastAPI + LangChain | Spring 生态丰富，企业级支持好 |
 | 向量数据库 | Milvus Vector Database | Pinecone, Weaviate, Chroma | 本地部署简单，性能优秀 |
+| 全文检索 | Apache Lucene (BM25) | Elasticsearch, OpenSearch | 轻量级内存索引，无外部依赖 |
+| 索引持久化 | Redis Cloud | MongoDB, PostgreSQL | 高性能 KV 存储，云服务稳定 |
 | 嵌入模型 | Transformers (all-MiniLM-L6-v2) | OpenAI Embeddings | 本地运行，无需 API 调用 |
 | 前端框架 | React | Vue, Angular | 生态丰富，组件化架构 |
 | LLM | DeepSeek (通过 SiliconFlow) | OpenAI, Claude, Llama | 成本较低，中文支持好 |
@@ -225,6 +248,6 @@ spring-ai-redis-demo/
 
 ## 总结
 
-该 Spring AI Milvus Demo 项目展示了如何使用现代技术栈构建一个完整的检索增强生成（RAG）应用。通过结合 Milvus Vector Database 的高效向量检索能力和大语言模型的理解能力，实现了基于知识库的智能问答系统。
+该 Spring AI Milvus Demo 项目展示了如何使用现代技术栈构建一个完整的检索增强生成（RAG）应用。通过结合 Milvus Vector Database 的高效向量检索能力、Lucene BM25 的关键词检索能力、Redis Cloud 的持久化存储以及大语言模型的理解能力，实现了基于知识库的智能问答系统。
 
-项目架构清晰，代码质量良好，遵循了现代软件开发的最佳实践。虽然 Spring AI 框架仍在快速发展中，但它已经能够提供构建 AI 应用所需的核心功能。对于希望了解和实践 RAG 技术的开发者来说，这是一个很好的学习和参考示例。
+项目架构清晰，代码质量良好，遵循了现代软件开发的最佳实践。混合检索功能显著提升了检索准确率，Redis 持久化解决了应用重启后索引重建的问题。对于希望了解和实践 RAG 技术的开发者来说，这是一个很好的学习和参考示例。

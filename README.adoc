@@ -8,7 +8,7 @@
 
 ---
 
-基于 link:https://docs.spring.io/spring-ai/reference/[Spring AI] 和 link:https://milvus.io/[Milvus] 向量数据库的检索增强生成（RAG）演示应用，集成 Rerank 精排功能。
+基于 link:https://docs.spring.io/spring-ai/reference/[Spring AI] 和 link:https://milvus.io/[Milvus] 向量数据库的检索增强生成（RAG）演示应用，支持 **混合检索**（BM25 + 向量）、**Rerank 精排** 和 **Redis 持久化**。
 
 == 技术架构
 
@@ -23,12 +23,17 @@
                     │   3.2.3     │
                     └──────┬──────┘
                            │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-┌───────▼───────┐  ┌───────▼───────┐  ┌───────▼───────┐
-│  Ollama LLM   │  │    Milvus     │  │  SiliconFlow  │
-│  (Chat/Embed) │  │ Vector Store  │  │   (Rerank)    │
-└───────────────┘  └───────────────┘  └───────────────┘
+    ┌──────────────────────┼──────────────────────┐
+    │                      │                      │
+┌───▼───┐  ┌───────▼───────┐  ┌───────▼───────┐  ┌───▼───┐
+│Ollama │  │    Milvus     │  │  SiliconFlow  │  │ Redis │
+│ (LLM) │  │ Vector Store  │  │   (Rerank)    │  │ Cloud │
+└───────┘  └───────────────┘  └───────────────┘  └───────┘
+                  │                                  │
+           ┌──────▼──────┐                    ┌──────▼──────┐
+           │ 语义向量检索 │                    │ BM25 索引   │
+           └─────────────┘                    │   持久化    │
+                                              └─────────────┘
 ----
 
 === 核心技术栈
@@ -52,6 +57,14 @@
 | 向量数据库
 | Milvus
 | 高性能向量检索
+
+| 混合检索
+| Lucene BM25 + Milvus 向量
+| RRF 算法融合
+
+| BM25 持久化
+| Redis Cloud
+| 索引自动恢复
 
 | Rerank 精排
 | 硅基流动 API (BAAI/bge-reranker-v2-m3)
@@ -93,6 +106,11 @@ ollama pull bge-m3:latest
 ----
 # Rerank 功能 (可选)
 export SILICONFLOW_KEY=<你的硅基流动API Key>
+
+# Redis Cloud (可选，用于 BM25 索引持久化)
+export REDIS_HOST=<Redis 云服务地址>
+export REDIS_PORT=6379
+export REDIS_PASSWORD=<Redis 密码>
 ----
 
 === 应用配置 (application.properties)
@@ -145,6 +163,18 @@ chunking.markdown.separateTables=true
 # 启用 DeepSeek OCR 处理 PDF
 deepseek-ocr.enabled=true
 deepseek-ocr.model=deepseek-ai/DeepSeek-OCR
+
+# --- 混合检索配置 (Lucene BM25 + Milvus Vector) ---
+# 开启后使用 BM25 关键词检索 + 向量语义检索，RRF 融合结果
+hybrid.search.enabled=true
+hybrid.search.rrf.k=60
+hybrid.search.dense.weight=0.7
+hybrid.search.sparse.weight=0.3
+
+# --- Redis 持久化 (可选，用于 BM25 索引持久化) ---
+spring.data.redis.host=${REDIS_HOST:localhost}
+spring.data.redis.port=${REDIS_PORT:6379}
+spring.data.redis.password=${REDIS_PASSWORD:}
 ----
 
 == 运行
@@ -164,15 +194,19 @@ mvn spring-boot:run
 ----
 1. 用户提问
       │
-2. 向量召回 (Milvus TopK=10)
+2. 混合召回 (hybrid.search.enabled=true 时)
+   ├── BM25 关键词检索 (Lucene 内存索引)
+   └── 向量语义检索 (Milvus TopK)
       │
-3. Rerank 精排 (SiliconFlow TopN=5) [可选]
+3. RRF 结果融合
       │
-4. 构建 Prompt + 上下文文档
+4. Rerank 精排 (SiliconFlow TopN=5) [可选]
       │
-5. LLM 生成回答 (Ollama)
+5. 构建 Prompt + 上下文文档
       │
-6. 返回结果
+6. LLM 生成回答 (Ollama/OpenAI)
+      │
+7. 返回结果
 ----
 
 == 项目结构
@@ -180,14 +214,16 @@ mvn spring-boot:run
 [source]
 ----
 src/main/java/com/redis/demo/spring/ai/
-├── RagApplication.java          # 应用入口
-├── RagController.java           # REST API 控制器
-├── RagConfiguration.java        # Spring 配置
-├── RagDataLoader.java           # 数据初始化加载器
+├── RagApplication.java           # 应用入口
+├── RagController.java            # REST API 控制器
+├── RagConfiguration.java         # Spring 配置
+├── RagDataLoader.java            # 数据初始化加载器
 └── service/
-    ├── RagService.java          # RAG 核心服务
-    ├── RerankService.java       # Rerank 精排服务
-    └── RerankResult.java        # Rerank 结果封装
+    ├── RagService.java           # RAG 核心服务
+    ├── RerankService.java        # Rerank 精排服务
+    ├── BM25SearchService.java    # Lucene BM25 检索服务
+    ├── HybridSearchService.java  # 混合检索融合服务
+    └── BM25DocumentPersistenceService.java  # Redis 持久化
 ----
 
 == 相关文档
