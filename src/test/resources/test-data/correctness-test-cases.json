@@ -1,0 +1,47 @@
+{
+    "description": "Correctness evaluation test cases that combine relevance and faithfulness assessment. Based on TableRAG paper (arXiv:2506.10380).",
+    "testCases": [
+        {
+            "id": "correct-001",
+            "question": "What is TableRAG?",
+            "context": "TableRAG is a Retrieval Augmented Generation Framework for Heterogeneous Document Reasoning. It addresses challenges in processing documents with both text and tables. TableRAG uses a SQL-based framework designed for heterogeneous document reasoning that unifies textual understanding and complex manipulations over tabular data.",
+            "expectedAnswer": "TableRAG is a SQL-based framework for heterogeneous document reasoning that unifies textual understanding and complex manipulations over tabular data.",
+            "scenario": "Concept Definition"
+        },
+        {
+            "id": "correct-002",
+            "question": "What are the four steps of TableRAG workflow?",
+            "context": "TableRAG iteratively operates in four steps: context-sensitive query decomposition, text retrieval, SQL programming and execution, and compositional intermediate answer generation. Each step builds upon the results of previous iterations.",
+            "expectedAnswer": "The four steps are: 1) Context-sensitive query decomposition, 2) Text retrieval, 3) SQL programming and execution, and 4) Compositional intermediate answer generation.",
+            "scenario": "Methodology"
+        },
+        {
+            "id": "correct-003",
+            "question": "Why do existing RAG approaches fail with heterogeneous documents?",
+            "context": "Existing RAG approaches exhibit critical limitations when applied to heterogeneous documents. Flattening tables and chunking strategies disrupt intrinsic tabular structure, leading to information loss. This undermines reasoning capabilities for multi-hop or global queries.",
+            "expectedAnswer": "Existing RAG approaches fail because flattening tables and chunking strategies disrupt the intrinsic tabular structure, causing information loss and undermining multi-hop and global query reasoning.",
+            "scenario": "Problem Statement"
+        },
+        {
+            "id": "correct-004",
+            "question": "What is HeteQA benchmark?",
+            "context": "We develop HeteQA, a novel benchmark designed to evaluate the multi-hop heterogeneous reasoning capabilities. HeteQA contains diverse question types requiring reasoning over both textual and tabular content in documents.",
+            "expectedAnswer": "HeteQA is a novel benchmark for evaluating multi-hop heterogeneous reasoning capabilities, containing diverse question types that require reasoning over both textual and tabular content.",
+            "scenario": "Benchmark"
+        },
+        {
+            "id": "correct-005",
+            "question": "How does TableRAG use SQL for table operations?",
+            "context": "TableRAG uses SQLite to represent tables and enable complex tabular operations. The SQL programming step generates queries to extract, filter, aggregate, and join tabular data based on the decomposed sub-queries.",
+            "expectedAnswer": "TableRAG uses SQLite to represent tables and generate SQL queries for complex operations including extraction, filtering, aggregation, and joining of tabular data based on decomposed sub-queries.",
+            "scenario": "SQL Operations"
+        },
+        {
+            "id": "correct-006",
+            "question": "What types of queries can TableRAG handle?",
+            "context": "TableRAG supports various query types including single-hop queries that require one piece of evidence, multi-hop queries that need reasoning across multiple evidences from both text and tables, and global aggregation queries that require computations over entire tables.",
+            "expectedAnswer": "TableRAG handles single-hop queries (one evidence), multi-hop queries (reasoning across multiple text and table evidences), and global aggregation queries (computations over entire tables).",
+            "scenario": "Query Types"
+        }
+    ]
+}
