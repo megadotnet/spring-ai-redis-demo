@@ -1,9 +1,12 @@
 package com.redis.demo.spring.ai;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import com.redis.demo.spring.ai.model.RetrievalResult;
 import com.redis.demo.spring.ai.service.RagService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -71,6 +74,13 @@ public class RagController {
 		return "Document upload not supported";
 	}
 
+
+	@PostMapping("/retrieve")
+	@ResponseBody
+	public List<RetrievalResult> retrieve(@RequestBody Map<String, String> payload) {
+		 return ragService.retrieveForTesting(payload);
+	}
+
 	public static class Message {
 
 		private String message;
@@ -90,6 +100,8 @@ public class RagController {
 		}
 
 	}
+
+
 
 	public static class Prompt {
 

@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.redis.demo.spring.ai.model.RetrievalResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ChatModel;
@@ -112,6 +113,40 @@ public class RagService {
 		String documents = similarDocuments.stream().map(doc -> doc.getText()).collect(Collectors.joining("\n"));
 		SystemPromptTemplate systemPromptTemplate = new SystemPromptTemplate(systemBeerPrompt);
 		return systemPromptTemplate.createMessage(Map.of("documents", documents));
+	}
+
+	public List<RetrievalResult> retrieveForTesting(Map<String, String> payload) {
+		String query = payload.get("query");
+		// 如果 Python 脚本没传 topK，默认取 5
+		int topK = payload.containsKey("topK") ? Integer.parseInt(payload.get("topK")) : 5;
+
+		// 1. 执行向量检索
+		List<Document> documents = store.similaritySearch(
+				SearchRequest.builder().query(query).topK(topK).build()
+		);
+
+		// 2. 转换为 DTO
+		return documents.stream()
+				.map(this::mapToResult)
+				.collect(Collectors.toList());
+	}
+
+	private RetrievalResult mapToResult(Document doc) {
+		// 尝试从 metadata 中提取分数
+		// Milvus 实现通常会将分数放在 "distance" 或 "score" 键中
+		// 注意：Spring AI 不同版本的 key 可能不同，建议先打断点看一下 metadata
+		Double score = null;
+		if (doc.getMetadata().containsKey("distance")) {
+			Object dist = doc.getMetadata().get("distance");
+			score = dist instanceof Number ? ((Number) dist).doubleValue() : null;
+		}
+
+		return new RetrievalResult(
+				doc.getId(),
+				doc.getText(),
+				score,
+				doc.getMetadata() // 将文件名等信息透传回去
+		);
 	}
 
 }
