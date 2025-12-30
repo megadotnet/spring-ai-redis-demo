@@ -28,7 +28,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 /**
  * BM25 全文检索服务
  * 基于 Apache Lucene 实现的内存索引 BM25 检索
- * 用于混合检索中的关键词匹配部分
+ * 支持通过 Redis 持久化文档数据，应用重启后自动恢复索引
  *
  * @author Spring AI RAG Demo
  * @since 2024-12
@@ -46,6 +46,9 @@ public class BM25SearchService {
     private final ReadWriteLock lock;
     private boolean indexBuilt;
 
+    // Redis 持久化服务（可选）
+    private BM25DocumentPersistenceService persistenceService;
+
     public BM25SearchService() {
         this.directory = new ByteBuffersDirectory();
         this.analyzer = new StandardAnalyzer();
@@ -55,11 +58,60 @@ public class BM25SearchService {
     }
 
     /**
+     * 设置 Redis 持久化服务
+     *
+     * @param persistenceService Redis 持久化服务
+     */
+    public void setPersistenceService(BM25DocumentPersistenceService persistenceService) {
+        this.persistenceService = persistenceService;
+    }
+
+    /**
+     * 从 Redis 恢复索引（应用启动时调用）
+     *
+     * @return 是否成功恢复
+     */
+    public boolean restoreFromPersistence() {
+        if (persistenceService == null) {
+            logger.debug("No persistence service configured, skipping restore");
+            return false;
+        }
+
+        if (!persistenceService.hasPersistedDocuments()) {
+            logger.info("No persisted documents found in Redis");
+            return false;
+        }
+
+        try {
+            List<Document> documents = persistenceService.loadDocuments();
+            if (!documents.isEmpty()) {
+                indexDocumentsInternal(documents, false); // 不保存到 Redis（已经从 Redis 加载）
+                logger.info("Restored BM25 index from Redis with {} documents", documents.size());
+                return true;
+            }
+        } catch (Exception e) {
+            logger.error("Failed to restore BM25 index from Redis: {}", e.getMessage(), e);
+        }
+
+        return false;
+    }
+
+    /**
      * 构建或更新 BM25 索引
      *
      * @param documents 文档列表
      */
     public void indexDocuments(List<Document> documents) {
+        indexDocumentsInternal(documents, true);
+    }
+
+    /**
+     * 内部索引方法
+     *
+     * @param documents      文档列表
+     * @param persistToRedis 是否持久化到 Redis
+     */
+    private void indexDocumentsInternal(List<Document> documents, boolean persistToRedis) {
         if (documents == null || documents.isEmpty()) {
             logger.warn("No documents to index");
             return;
@@ -95,6 +147,16 @@ public class BM25SearchService {
 
             indexBuilt = true;
             logger.info("BM25 index built successfully with {} documents", documents.size());
+
+            // 持久化到 Redis（带 OOM 保护）
+            if (persistToRedis && persistenceService != null) {
+                boolean saved = persistenceService.saveDocuments(documents);
+                if (saved) {
+                    logger.info("Documents persisted to Redis Cloud");
+                } else {
+                    logger.warn("Redis persistence skipped (OOM or unavailable), using memory-only mode");
+                }
+            }
 
         } catch (IOException e) {
             logger.error("Failed to build BM25 index: {}", e.getMessage(), e);
@@ -136,6 +198,11 @@ public class BM25SearchService {
             }
 
             logger.info("Added {} documents to BM25 index", documents.size());
+
+            // 追加持久化到 Redis
+            if (persistenceService != null) {
+                persistenceService.appendDocuments(documents);
+            }
 
         } catch (IOException e) {
             logger.error("Failed to add documents to BM25 index: {}", e.getMessage(), e);
@@ -200,7 +267,7 @@ public class BM25SearchService {
     }
 
     /**
-     * 清空索引
+     * 清空索引（同时清除 Redis 持久化数据）
      */
     public void clearIndex() {
         lock.writeLock().lock();
@@ -208,6 +275,12 @@ public class BM25SearchService {
             directory = new ByteBuffersDirectory();
             documentStore.clear();
             indexBuilt = false;
+
+            // 清除 Redis 持久化数据
+            if (persistenceService != null) {
+                persistenceService.clearDocuments();
+            }
+
             logger.info("BM25 index cleared");
         } finally {
             lock.writeLock().unlock();

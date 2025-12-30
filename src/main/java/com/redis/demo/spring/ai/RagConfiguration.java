@@ -1,5 +1,6 @@
 package com.redis.demo.spring.ai;
 
+import com.redis.demo.spring.ai.service.BM25DocumentPersistenceService;
 import com.redis.demo.spring.ai.service.BM25SearchService;
 import com.redis.demo.spring.ai.service.HybridSearchService;
 import com.redis.demo.spring.ai.service.RagService;
@@ -24,6 +25,7 @@ import org.springframework.boot.web.client.RestClientCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 import java.time.Duration;
@@ -101,13 +103,37 @@ public class RagConfiguration {
     }
 
     /**
-     * BM25SearchService Bean - 仅当 hybrid.search.enabled=true 时创建
-     * Lucene 内存索引，用于 BM25 全文检索
+     * BM25DocumentPersistenceService Bean - 仅当 hybrid.search.enabled=true 且 Redis
+     * 可用时创建
+     * 用于将 BM25 文档数据持久化到 Redis Cloud
      */
     @Bean
     @ConditionalOnProperty(name = "hybrid.search.enabled", havingValue = "true")
-    public BM25SearchService bm25SearchService() {
-        return new BM25SearchService();
+    public BM25DocumentPersistenceService bm25DocumentPersistenceService(
+            org.springframework.beans.factory.ObjectProvider<StringRedisTemplate> redisTemplateProvider) {
+        StringRedisTemplate redisTemplate = redisTemplateProvider.getIfAvailable();
+        if (redisTemplate != null) {
+            return new BM25DocumentPersistenceService(redisTemplate);
+        }
+        return null;
+    }
+
+    /**
+     * BM25SearchService Bean - 仅当 hybrid.search.enabled=true 时创建
+     * Lucene 内存索引，支持 Redis 持久化
+     */
+    @Bean
+    @ConditionalOnProperty(name = "hybrid.search.enabled", havingValue = "true")
+    public BM25SearchService bm25SearchService(
+            org.springframework.beans.factory.ObjectProvider<BM25DocumentPersistenceService> persistenceServiceProvider) {
+        BM25SearchService service = new BM25SearchService();
+        BM25DocumentPersistenceService persistenceService = persistenceServiceProvider.getIfAvailable();
+        if (persistenceService != null) {
+            service.setPersistenceService(persistenceService);
+            // 尝试从 Redis 恢复索引
+            service.restoreFromPersistence();
+        }
+        return service;
     }
 
     /**
