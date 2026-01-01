@@ -98,10 +98,17 @@ public class BM25SearchService {
 
     /**
      * 构建或更新 BM25 索引
+     * 如果索引已从Redis恢复且存在数据，则跳过重新索引
      *
      * @param documents 文档列表
      */
     public void indexDocuments(List<Document> documents) {
+        // 检查是否已从Redis恢复索引，如果已恢复且存在数据，则跳过
+        if (indexBuilt && persistenceService != null && persistenceService.hasPersistedDocuments()) {
+            logger.info("BM25 index already exists in Redis ({} documents), skipping re-indexing", 
+                    persistenceService.getDocumentCount());
+            return;
+        }
         indexDocumentsInternal(documents, true);
     }
 

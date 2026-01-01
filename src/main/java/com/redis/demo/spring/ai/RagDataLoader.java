@@ -184,6 +184,7 @@ public class RagDataLoader implements ApplicationRunner {
 		logger.info("Added {} documents to vector store", documents.size());
 
 		// 构建 BM25 索引（当混合检索启用时）
+		// 注意：如果Redis中已存在BM25索引数据，indexForBM25会跳过重新索引
 		if (hybridSearchService != null) {
 			logger.info("Building BM25 index for hybrid search...");
 			hybridSearchService.indexForBM25(documents);

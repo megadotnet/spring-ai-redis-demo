@@ -46,6 +46,7 @@ public class BM25DocumentPersistenceService {
 
     /**
      * 保存文档列表到 Redis（带 OOM 保护）
+     * 如果Redis中已存在文档数据，则跳过保存
      *
      * @param documents 文档列表
      * @return 是否保存成功
@@ -61,10 +62,18 @@ public class BM25DocumentPersistenceService {
             return false;
         }
 
+        // 检查Redis中是否已存在文档数据
+        long existingCount = getDocumentCount();
+        if (existingCount > 0) {
+            logger.info("BM25 documents already exist in Redis ({} documents), skipping save to avoid duplicate data", 
+                    existingCount);
+            return true; // 返回true表示数据已存在，不需要重新保存
+        }
+
         logger.info("Saving {} documents to Redis for BM25 persistence", documents.size());
 
         try {
-            // 清除旧数据
+            // 清除旧数据（虽然应该没有，但为了安全起见）
             clearDocuments();
 
             // 保存每个文档（使用压缩策略）
