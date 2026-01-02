@@ -41,10 +41,9 @@ class RagDataLoaderIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.ai.vectorstore.milvus.uri",
+        registry.add("spring.ai.vectorstore.milvus.client.uri",
                 () -> "http://" + milvus.getHost() + ":" + milvus.getMappedPort(19530));
         registry.add("spring.ai.vectorstore.milvus.collection-name", () -> "test_beers_collection");
-        registry.add("spring.ai.vectorstore.milvus.database-name", () -> "default");
     }
 
     @BeforeEach

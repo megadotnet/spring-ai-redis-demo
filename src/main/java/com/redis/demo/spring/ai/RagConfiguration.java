@@ -61,16 +61,22 @@ public class RagConfiguration {
     }
 
     @Bean
-    public MilvusServiceClient milvusServiceClient(@Value("${spring.ai.vectorstore.milvus.client.host}") String host) {
-        ConnectParam connectParam = ConnectParam.newBuilder()
-                .withHost(host)
-                .withPort(19530)
+    public MilvusServiceClient milvusServiceClient(
+            @Value("${spring.ai.vectorstore.milvus.client.uri}") String uri,
+            @Value("${spring.ai.vectorstore.milvus.client.token:}") String token) {
+        ConnectParam.Builder builder = ConnectParam.newBuilder()
+                .withUri(uri)
                 .withConnectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .withKeepAliveTime(30, java.util.concurrent.TimeUnit.SECONDS)
                 .withKeepAliveTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .withIdleTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .build();
-
+                .withIdleTimeout(30, java.util.concurrent.TimeUnit.SECONDS);
+        
+        // 如果提供了 token，则设置 token（云服务需要）
+        if (token != null && !token.isEmpty()) {
+            builder.withToken(token);
+        }
+        
+        ConnectParam connectParam = builder.build();
         return new MilvusServiceClient(connectParam);
     }
 
@@ -78,17 +84,28 @@ public class RagConfiguration {
     @Primary
     public VectorStore milvusVectorStore(MilvusServiceClient client,
             @Value("${spring.ai.vectorstore.milvus.collection-name}") String collectionName,
+            @Value("${spring.ai.vectorstore.milvus.index-type:IVF_FLAT}") String indexTypeStr,
+            @Value("${spring.ai.vectorstore.milvus.metric-type:IP}") String metricTypeStr,
             EmbeddingModel embeddingModel,
-            @Value("${spring.ai.vectorstore.milvus.embeddingDimension:1536}") int dimension) {
-        return MilvusVectorStore.builder(client, embeddingModel)
+            @Value("${spring.ai.vectorstore.milvus.embeddingDimension:1536}") int dimension,
+            @Value("${spring.ai.vectorstore.milvus.database-name:}") String databaseName) {
+        IndexType indexType = IndexType.valueOf(indexTypeStr);
+        MetricType metricType = MetricType.valueOf(metricTypeStr);
+        
+        var builder = MilvusVectorStore.builder(client, embeddingModel)
                 .collectionName(collectionName)
-                .databaseName("default")
-                .indexType(IndexType.IVF_FLAT)
-                .metricType(MetricType.COSINE)
+                .indexType(indexType)
+                .metricType(metricType)
                 .embeddingDimension(dimension)
                 .batchingStrategy(new TokenCountBatchingStrategy())
-                .initializeSchema(true)
-                .build();
+                .initializeSchema(true);
+        
+        // 如果配置了数据库名称，则设置数据库名称
+        if (databaseName != null && !databaseName.isEmpty()) {
+            builder.databaseName(databaseName);
+        }
+        
+        return builder.build();
     }
 
     /**
