@@ -167,12 +167,29 @@ class Evaluator:
         
         results = evaluate(
             test_cases=test_cases,
-            metrics=[metric],
-            print_results=True
+            metrics=[metric]
         )
         
         # 计算汇总结果
-        scores = [tc.metrics_data[0].score if tc.metrics_data else 0 for tc in test_cases]
+        # 计算汇总结果
+        scores = []
+        individual_details = []
+
+        for i, result in enumerate(results):
+            score = 0
+            reason = None
+            # result 是 TestResult 对象
+            if hasattr(result, 'metrics') and result.metrics:
+                score = result.metrics[0].score
+                reason = result.metrics[0].reason
+            
+            scores.append(score)
+            individual_details.append({
+                "question": test_cases[i].input[:100],
+                "score": score,
+                "reason": reason
+            })
+
         avg_score = sum(scores) / len(scores) if scores else 0
         avg_id_hit_rate = sum(id_hit_rates) / len(id_hit_rates) if id_hit_rates else 0
         
@@ -180,14 +197,7 @@ class Evaluator:
             "total_test_cases": len(test_cases),
             "average_context_recall": avg_score,
             "average_id_hit_rate": avg_id_hit_rate,
-            "individual_results": [
-                {
-                    "question": tc.input[:100],
-                    "score": tc.metrics_data[0].score if tc.metrics_data else None,
-                    "reason": tc.metrics_data[0].reason if tc.metrics_data else None
-                }
-                for tc in test_cases
-            ]
+            "individual_results": individual_details
         }
         
         # 打印和保存报告
