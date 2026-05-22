@@ -1,105 +1,107 @@
-# Spring AI Redis Demo 技术架构与使用指南
+# Spring AI Redis Demo Technical Architecture and Usage Guide
 
-本项目是一个基于 Spring Boot 3.2.3 和 Spring AI 1.0.0 的检索增强生成（RAG）演示应用，结合了 Milvus 向量数据库和大型语言模型（LLM）来实现基于领域知识库的智能问答系统。项目采用前后端分离架构，前端使用 React 构建，后端利用 Spring 生态集成各项 AI 能力，支持混合检索（BM25 + 向量检索）、精排（Rerank）以及数据持久化。
+English | [简体中文](ReadMe_Zhcn.md)
 
----
-
-## 🛠️ 技术栈清单
-
-以下梳理了本项目各核心模块采用的具体技术选型及其版本和核心作用。
-
-### 1. 🎨 前端框架 (Frontend)
-
-| 技术/组件 | 版本号 | 核心作用说明 |
-| --- | --- | --- |
-| **React** | `18.2.0` | 核心视图层库，采用函数式与 Class Component 架构构建用户界面。 |
-| **React DOM** | `18.2.0` | 将 React 虚拟 DOM 渲染到 Web 端实际 DOM 的渲染器。 |
-| **Bootstrap** | `5.3.2` | 提供响应式布局、预设样式与基础 CSS 框架。 |
-| **React Bootstrap** | `2.9.2` | 将 Bootstrap 组件封装为 React 组件，方便基于状态驱动 UI 渲染。 |
-
-### 2. ⚙️ 后端语言及运行环境 (Backend)
-
-| 技术/组件 | 版本号 | 核心作用说明 |
-| --- | --- | --- |
-| **Java** | `17` | 后端核心开发语言，提供强大的生态支持和性能保障。 |
-| **Spring Boot** | `3.2.3` | 应用脚手架，实现自动装配、快速构建生产级 RESTful API 服务。 |
-| **Spring AI** | `1.0.0` | 统一抽象 LLM 和向量数据库交互，支持 Ollama、OpenAI 及 Milvus。 |
-| **Apache Lucene** | `9.11.1` | 强大的文本搜索引擎库，用于实现本地化高性能的 BM25 关键词检索。 |
-| **Apache POI** | `5.2.3` | 办公文档解析库（`poi` 及 `poi-ooxml`），辅助解析导入的结构化文档。 |
-
-### 3. 🗄️ 数据库系统与基础设施 (Infrastructure)
-
-| 技术/组件 | 版本号 | 核心作用说明 |
-| --- | --- | --- |
-| **Milvus** | 最新稳定版 | 高性能向量数据库，存储高维嵌入向量（Embeddings）并实现快速的 Top-K 语义相似度搜索。 |
-| **Redis** | Redis Stack Server | 用作高性能 KV 缓存，并借助 Spring Data Redis 持久化 BM25 全文索引，支持应用重启后的索引恢复。 |
-| **Ollama** | 最新稳定版 | 本地运行的 LLM 引擎，用于执行 `qwen2.5:0.5b` 等语言模型及 `bge-m3:latest` 等嵌入模型。 |
-
-### 4. 🧰 工具链与构建部署 (Toolchain)
-
-| 技术/组件 | 版本号 | 核心作用说明 |
-| --- | --- | --- |
-| **Maven** | `3.6+` | 后端项目依赖管理及构建工具。 |
-| **Node.js & npm** | Node `v18.16.0`+, npm `9.5.1`+ | 前端运行环境及包管理工具。 |
-| **Frontend Maven Plugin**| `1.15.0` | 在 Maven 构建生命周期中自动构建前端项目（如下载 Node 并执行 `npm run build`）。 |
-| **Docker & Compose** | `20+` | 容器化技术，统一编排 Redis、Milvus、应用本身等组件的部署环境，解决依赖冲突问题。 |
-| **JaCoCo** | `0.8.8` | 代码覆盖率工具，在测试阶段生成统计报告，保障代码质量。 |
+This project is a Retrieval-Augmented Generation (RAG) demonstration application based on Spring Boot 3.2.3 and Spring AI 1.0.0. It integrates the Milvus vector database and Large Language Models (LLMs) to implement an intelligent Q&A system based on a domain knowledge base. The project adopts a frontend-backend separation architecture: the frontend is built with React, and the backend leverages the Spring ecosystem to integrate various AI capabilities, supporting hybrid search (BM25 + vector search), reranking, and data persistence.
 
 ---
 
-## 💻 环境依赖要求
+## 🛠️ Tech Stack List
 
-为了避免环境冲突，请确保您的开发和运行环境满足以下最低兼容版本：
+The following details the specific technology selections, their versions, and core roles for each core module in this project.
 
-* **Java**: `JDK 17` 及以上
-* **Maven**: `3.6.3` 及以上
-* **Node.js**: `v18.16.0` 及以上 (推荐 LTS 版本)
-* **npm**: `9.5.1` 及以上
-* **Docker**: 最新稳定版
-* **Docker Compose**: `v2.0.0` 及以上
+### 1. 🎨 Frontend Framework
+
+| Technology/Component | Version | Core Role Description |
+| --- | --- | --- |
+| **React** | `18.2.0` | Core view layer library, building the user interface using functional and Class Component architectures. |
+| **React DOM** | `18.2.0` | The renderer that renders React's virtual DOM to the actual DOM in the web environment. |
+| **Bootstrap** | `5.3.2` | Provides responsive layout, preset styles, and a foundational CSS framework. |
+| **React Bootstrap** | `2.9.2` | Encapsulates Bootstrap components as React components, facilitating state-driven UI rendering. |
+
+### 2. ⚙️ Backend Language and Runtime Environment
+
+| Technology/Component | Version | Core Role Description |
+| --- | --- | --- |
+| **Java** | `17` | The core backend programming language, providing strong ecosystem support and performance guarantees. |
+| **Spring Boot** | `3.2.3` | Application scaffolding, enabling auto-configuration and rapid construction of production-grade RESTful API services. |
+| **Spring AI** | `1.0.0` | Unified abstraction for interacting with LLMs and vector databases, supporting Ollama, OpenAI, and Milvus. |
+| **Apache Lucene** | `9.11.1` | Powerful text search engine library, used to implement localized, high-performance BM25 keyword search. |
+| **Apache POI** | `5.2.3` | Office document parsing library (`poi` and `poi-ooxml`), assisting in parsing imported structured documents. |
+
+### 3. 🗄️ Database Systems and Infrastructure
+
+| Technology/Component | Version | Core Role Description |
+| --- | --- | --- |
+| **Milvus** | Latest Stable | High-performance vector database, storing high-dimensional embeddings and implementing fast Top-K semantic similarity search. |
+| **Redis** | Redis Stack Server | Used as a high-performance KV cache, and through Spring Data Redis, it persists the BM25 full-text index, supporting index recovery after application restarts. |
+| **Ollama** | Latest Stable | Locally run LLM engine, used to execute language models like `qwen2.5:0.5b` and embedding models like `bge-m3:latest`. |
+
+### 4. 🧰 Toolchain and Build/Deployment
+
+| Technology/Component | Version | Core Role Description |
+| --- | --- | --- |
+| **Maven** | `3.6+` | Backend project dependency management and build tool. |
+| **Node.js & npm** | Node `v18.16.0`+, npm `9.5.1`+ | Frontend runtime environment and package management tool. |
+| **Frontend Maven Plugin**| `1.15.0` | Automatically builds the frontend project during the Maven build lifecycle (e.g., downloading Node and executing `npm run build`). |
+| **Docker & Compose** | `20+` | Containerization technology, orchestrating the deployment environment of Redis, Milvus, and the application itself to resolve dependency conflicts. |
+| **JaCoCo** | `0.8.8` | Code coverage tool, generating statistical reports during the testing phase to ensure code quality. |
 
 ---
 
-## 🚀 本地部署与启动步骤
+## 💻 Environmental Dependency Requirements
 
-适配 Windows、macOS、Linux 主流开发环境的可直接执行指令如下。
+To avoid environmental conflicts, please ensure your development and runtime environments meet the following minimum compatible versions:
 
-### 1. 启动基础设施依赖 (Milvus, Redis 等)
+* **Java**: `JDK 17` or higher
+* **Maven**: `3.6.3` or higher
+* **Node.js**: `v18.16.0` or higher (LTS version recommended)
+* **npm**: `9.5.1` or higher
+* **Docker**: Latest stable version
+* **Docker Compose**: `v2.0.0` or higher
 
-利用 Docker Compose 一键启动依赖组件：
+---
+
+## 🚀 Local Deployment and Startup Steps
+
+The directly executable instructions adapted for Windows, macOS, and Linux mainstream development environments are as follows.
+
+### 1. Start Infrastructure Dependencies (Milvus, Redis, etc.)
+
+Use Docker Compose to start the dependency components with one click:
 ```bash
-# 进入项目根目录
+# Enter the project root directory
 cd spring-ai-redis-demo
 
-# 启动基础设施容器
+# Start the infrastructure containers
 docker-compose up -d
 ```
 
-### 2. 下载并运行本地大模型 (Ollama)
+### 2. Download and Run Local Large Models (Ollama)
 
-确保你已经安装了 [Ollama](https://ollama.com/)：
+Ensure you have installed [Ollama](https://ollama.com/):
 ```bash
-# 下载并运行嵌入模型 (1024 维向量)
+# Download and run the embedding model (1024-dimensional vectors)
 ollama pull bge-m3:latest
 
-# 下载并运行对话模型
+# Download and run the conversation model
 ollama pull qwen2.5:0.5b
 ```
 
-### 3. 配置环境变量 (可选，如果需要使用 Rerank 精排或外部云 Redis)
+### 3. Configure Environment Variables (Optional, if using Rerank or external Cloud Redis)
 
-在终端或环境变量设置中导出所需的 Key（示例为 Unix/macOS，Windows 使用 `set`）：
+Export the required Keys in your terminal or environment variable settings (examples are for Unix/macOS; use `set` for Windows):
 ```bash
 # Windows
-set SILICONFLOW_KEY=你的硅基流动API_KEY
+set SILICONFLOW_KEY=your_siliconflow_api_key
 
 # macOS / Linux
-export SILICONFLOW_KEY=你的硅基流动API_KEY
+export SILICONFLOW_KEY=your_siliconflow_api_key
 ```
 
-### 4. 编译与启动后端服务
+### 4. Compile and Start Backend Service
 
-由于使用了 `frontend-maven-plugin`，Maven 会在构建时自动完成前端的下载、依赖安装与编译。
+Because the `frontend-maven-plugin` is used, Maven will automatically handle frontend downloading, dependency installation, and compilation during the build process.
 
 ```bash
 # Windows
@@ -111,9 +113,9 @@ mvnw.cmd spring-boot:run
 ./mvnw spring-boot:run
 ```
 
-应用启动后，将自动在端口 `8080` 监听。访问 [http://localhost:8080](http://localhost:8080) 即可看到前端 React 界面。
+Once the application starts, it will automatically listen on port `8080`. Visit [http://localhost:8080](http://localhost:8080) to see the frontend React interface.
 
-*(附：单独启动前端的命令：)*
+*(Appendix: Commands to start the frontend separately:)*
 ```bash
 cd frontend
 npm install
@@ -122,63 +124,63 @@ npm start
 
 ---
 
-## 📂 项目结构说明
+## 📂 Project Structure
 
 ```text
 spring-ai-redis-demo/
-├── frontend/                       # React 前端工程目录
-│   ├── public/                     # 静态资源 (HTML 模板、图标等)
-│   ├── src/                        # 前端源代码
-│   │   ├── Components/             # 界面组件 (如 ChatWindow)
-│   │   ├── App.js / api.js         # 前端根组件与 API 请求封装
-│   └── package.json                # 前端依赖配置
+├── frontend/                       # React frontend project directory
+│   ├── public/                     # Static resources (HTML templates, icons, etc.)
+│   ├── src/                        # Frontend source code
+│   │   ├── Components/             # UI components (e.g., ChatWindow)
+│   │   ├── App.js / api.js         # Frontend root component and API request encapsulation
+│   └── package.json                # Frontend dependency configuration
 ├── src/
 │   ├── main/
-│   │   ├── java/com/redis/demo/    # 后端 Java 核心业务逻辑
-│   │   │   ├── RagApplication.java # Spring Boot 启动类
-│   │   │   ├── RagController.java  # REST API 路由
-│   │   │   ├── RagConfiguration.java# AI 及 向量数据库 Bean 配置
-│   │   │   ├── RagDataLoader.java  # 应用启动时初始数据的预处理和注入
-│   │   │   └── service/            # RAG、精排、BM25搜索等业务服务
-│   │   └── resources/              # 后端配置 (application.properties 等)
-│   └── test/                       # 单元测试与集成测试
-├── Dockerfile                      # 应用容器构建文件
-├── docker-compose.yml              # 依赖服务编排文件
-└── pom.xml                         # Maven 构建与依赖管理配置文件
+│   │   ├── java/com/redis/demo/    # Backend Java core business logic
+│   │   │   ├── RagApplication.java # Spring Boot startup class
+│   │   │   ├── RagController.java  # REST API routing
+│   │   │   ├── RagConfiguration.java# AI and vector database Bean configuration
+│   │   │   ├── RagDataLoader.java  # Pre-processing and injection of initial data on startup
+│   │   │   └── service/            # RAG, rerank, BM25 search and other business services
+│   │   └── resources/              # Backend configuration (application.properties, etc.)
+│   └── test/                       # Unit and integration tests
+├── Dockerfile                      # Application container build file
+├── docker-compose.yml              # Dependency service orchestration file
+└── pom.xml                         # Maven build and dependency management configuration file
 ```
 
 ---
 
-## 📜 开发规范
+## 📜 Development Guidelines
 
-1. **分支管理**：
-    - `main`：用于发布稳定版本，不允许直接 Push。
-    - `develop`：开发主分支。
-    - `feature/*`：新功能分支，从 `develop` 检出，开发完成后合并回 `develop`。
-2. **提交规范**：
-    - 采用 Angular 规范格式：`<type>(<scope>): <subject>`（例如 `feat(rag): 增加 RRF 混合检索算法`、`fix(ui): 修复聊天气泡溢出问题`）。
-3. **代码风格**：
-    - Java：遵循 Spring Boot 官方编码规范，并利用 Lombok `@Slf4j`, `@Data` 简化代码。
-    - 前端：遵循 ESLint + Prettier，采用函数式组件与 Hooks 为主（在逐步迁移旧 Class 组件的情况下）。
-4. **组件职责**：
-    - 保持单一职责原则。Controller 层只处理 HTTP 请求包装；具体大模型拼接提示、检索流程交由 Service 层处理。
+1. **Branch Management**:
+    - `main`: Used for releasing stable versions, direct Push is not allowed.
+    - `develop`: Main development branch.
+    - `feature/*`: New feature branches, checked out from `develop` and merged back into `develop` upon completion.
+2. **Commit Conventions**:
+    - Adopt Angular specification formats: `<type>(<scope>): <subject>` (e.g., `feat(rag): add RRF hybrid search algorithm`, `fix(ui): fix chat bubble overflow issue`).
+3. **Code Style**:
+    - Java: Follow official Spring Boot coding guidelines, and utilize Lombok `@Slf4j`, `@Data` to simplify code.
+    - Frontend: Follow ESLint + Prettier, using functional components and Hooks predominantly (while gradually migrating legacy Class components).
+4. **Component Responsibilities**:
+    - Maintain the single responsibility principle. The Controller layer should only handle HTTP request packaging; specific LLM prompt concatenation and retrieval processes should be handled by the Service layer.
 
 ---
 
-## ❓ 常见问题排查 (Troubleshooting)
+## ❓ Troubleshooting
 
-1. **前端编译失败或 Node 找不到**
-    - **问题表现**：运行 `mvn clean install` 时在 `frontend-maven-plugin` 步骤报错。
-    - **解决方案**：检查系统是否正确安装了 Node.js（`v18+`），或者清理 Maven 缓存后重试。也可以手动进入 `frontend` 目录执行 `npm install` 与 `npm run build`。
+1. **Frontend compilation failed or Node not found**
+    - **Symptom**: Error occurs at the `frontend-maven-plugin` step when running `mvn clean install`.
+    - **Solution**: Check if Node.js (`v18+`) is correctly installed on your system, or try clearing the Maven cache and trying again. Alternatively, manually enter the `frontend` directory to execute `npm install` and `npm run build`.
 
-2. **Milvus 连接被拒绝 / Connection Refused**
-    - **问题表现**：后端启动时抛出 `Failed to connect to Milvus` 异常。
-    - **解决方案**：检查 Docker Compose 是否已完全启动（`docker ps` 确保 milvus 状态为 `healthy` 或 `running`）；若部署在远程，请确保 `application.properties` 中的 `host` IP 能够连通。
+2. **Milvus Connection Refused**
+    - **Symptom**: Backend throws `Failed to connect to Milvus` exception upon startup.
+    - **Solution**: Check if Docker Compose is fully started (`docker ps` to ensure milvus status is `healthy` or `running`); if deployed remotely, ensure the `host` IP in `application.properties` is accessible.
 
-3. **Ollama 模型拉取失败或超时**
-    - **问题表现**：对话时后端日志报错提示模型调用超时或 404。
-    - **解决方案**：确保你事先通过 `ollama pull <model_name>` 将 `qwen2.5` 等模型成功拉取到本地，并检查 `http://127.0.0.1:11434` 服务是否存活。
+3. **Ollama model pull failed or timed out**
+    - **Symptom**: Backend logs indicate model call timeout or 404 during conversation.
+    - **Solution**: Ensure you have successfully pulled the model (e.g., `qwen2.5`) locally beforehand via `ollama pull <model_name>`, and check if the `http://127.0.0.1:11434` service is alive.
 
-4. **Redis OOM (内存溢出) 问题**
-    - **问题表现**：加载海量数据建立 BM25 索引持久化时，Redis 崩溃。
-    - **解决方案**：后端应用已具备自动降级至本地 Lucene 内存索引机制，请监控 Redis 内存分配；如有需要，可以在 `docker-compose.yml` 中配置调大 Redis 容器的最大可用内存。
+4. **Redis OOM (Out Of Memory) Issues**
+    - **Symptom**: Redis crashes when loading massive data to establish BM25 index persistence.
+    - **Solution**: The backend application has a mechanism to automatically downgrade to a local Lucene in-memory index; please monitor Redis memory allocation. If necessary, you can configure to increase the maximum available memory for the Redis container in `docker-compose.yml`.
