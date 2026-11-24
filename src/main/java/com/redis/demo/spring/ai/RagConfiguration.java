@@ -188,4 +188,29 @@ public class RagConfiguration {
         return new RagService(chatModel, vectorStore, rerankService, hybridSearchService);
     }
 
+    /**
+     * RetrievalTool Bean - Agent 链路的统一检索工具入口。
+     * hybrid.search.enabled=true 时使用 HybridRetrievalTool（Milvus + BM25 + RRF + 可选 Rerank）；
+     * 否则降级为 VectorOnlyRetrievalTool，保证 Agent Runtime 始终有可用检索实现，
+     * 应用启动不会因缺少工具 Bean 失败。旧 RagService 链路不受影响，可继续作为回滚路径。
+     */
+    @Bean
+    public com.redis.demo.spring.ai.agent.RetrievalTool retrievalTool(
+            VectorStore vectorStore,
+            @Value("${rerank.enabled:false}") boolean rerankEnabled,
+            @Value("${hybrid.search.enabled:false}") boolean hybridSearchEnabled,
+            org.springframework.beans.factory.ObjectProvider<RerankService> rerankServiceProvider,
+            org.springframework.beans.factory.ObjectProvider<HybridSearchService> hybridSearchServiceProvider) {
+        RerankService rerankService = rerankEnabled ? rerankServiceProvider.getIfAvailable() : null;
+        HybridSearchService hybridSearchService = hybridSearchEnabled
+                ? hybridSearchServiceProvider.getIfAvailable()
+                : null;
+        if (hybridSearchService != null) {
+            return new com.redis.demo.spring.ai.agent.HybridRetrievalTool(hybridSearchService, rerankService);
+        }
+        return new com.redis.demo.spring.ai.agent.VectorOnlyRetrievalTool(
+                vectorStore,
+                new com.redis.demo.spring.ai.agent.VectorOnlyRetrievalTool.RerankHolder(rerankService));
+    }
+
 }
