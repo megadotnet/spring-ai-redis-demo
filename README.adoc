@@ -8,33 +8,47 @@
 
 ---
 
-基于 link:https://docs.spring.io/spring-ai/reference/[Spring AI] 和 link:https://milvus.io/[Milvus] 向量数据库的检索增强生成（RAG）演示应用，支持 **混合检索**（BM25 + 向量）、**Rerank 精排** 和 **Redis 持久化**。
+基于 link:https://docs.spring.io/spring-ai/reference/[Spring AI] 和 link:https://milvus.io/[Milvus] 向量数据库的检索增强生成（RAG）演示应用，支持 **混合检索**（BM25 + 向量 + RRF 融合）、**Rerank 精排** 和 **Redis 持久化**。
+
+应用同时提供**两条独立的问答通道**：单次检索的 Native 链路（`POST /chat/{chatId}`），以及带查询规划、多轮检索与引用校验的 Agentic 有界运行时链路（`POST /api/agent/chat`）。两者共用同一套检索栈与同一份 Redis 会话存储。
+
+完整的架构解读、数据流、数据结构与前后端契约详见 link:Architecture.md[技术架构详解]。
 
 == 技术架构
 
 [source]
 ----
-                    ┌─────────────┐
-                    │   React UI  │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │ Spring Boot │
-                    │   4.2.0     │
-                    └──────┬──────┘
-                           │
-    ┌──────────────────────┼──────────────────────┐
-    │                      │                      │
-┌───▼───┐  ┌───────▼───────┐  ┌───────▼───────┐  ┌───▼───┐
-│Ollama │  │    Milvus     │  │  SiliconFlow  │  │ Redis │
-│ (LLM) │  │ Vector Store  │  │   (Rerank)    │  │ Cloud │
-└───────┘  └───────────────┘  └───────────────┘  └───────┘
-                  │                                  │
-           ┌──────▼──────┐                    ┌──────▼──────┐
-           │ 语义向量检索 │                    │ BM25 索引   │
-           └─────────────┘                    │   持久化    │
-                                              └─────────────┘
+              ┌───────────────────────────────┐
+              │  React UI (CRA, hash 路由)     │
+              │  #/native        #/agentic    │
+              └───────┬───────────────┬───────┘
+        POST /chat/{chatId}    POST /api/agent/chat
+                      │               │
+              ┌───────▼──────┐  ┌─────▼───────────────┐
+              │  RagService  │  │ AgentRuntimeService │
+              │  异步，1 轮  │  │ 同步，最多 3 轮检索 │
+              └───────┬──────┘  │ + QueryPlanner      │
+                      │         │ + GroundingChecker  │
+                      │         └─────┬───────────────┘
+                      └────────┬──────┘
+                               ▼
+                   ┌───────────────────────┐
+                   │  HybridSearchService  │
+                   │   RRF 融合 + Rerank   │
+                   └─────┬─────────────┬───┘
+              ┌──────────▼───┐     ┌───▼────────────┐
+              │ Lucene BM25  │     │ Milvus Vector  │
+              │ （进程内索引）│     │ Store (COSINE) │
+              └──────────┬───┘     └────────────────┘
+                         │ 文档持久化
+              ┌──────────▼───────┐   ┌─────────────────┐
+              │ Redis            │   │ SiliconFlow     │
+              │ · BM25 文档      │   │ · Rerank        │
+              │ · 会话记忆       │   │ · DeepSeek-OCR  │
+              └──────────────────┘   └─────────────────┘
 ----
+
+WARNING: BM25 索引本体在 **Lucene 内存目录**（`ByteBuffersDirectory`）里，Redis 只存放用于重启后重建的文档正文（`bm25:doc:{docId}`，截断 2000 字符）。恢复时 `docId` 与 metadata 会丢失，因此重启后建议调用 `POST /admin/bm25/rebuild`。
 
 === 核心技术栈
 
@@ -46,13 +60,13 @@
 | Spring Boot 4.2.0 + Spring AI 2.1.0
 | Java 17+
 
-| LLM 服务
-| Ollama (qwen2.5:0.5b)
-| 本地部署，支持中文
+| Chat 模型
+| 硅基流动 `Qwen/Qwen3-8B`（默认）
+| 由 `chat.provider` 在 openai / ollama 间切换；`ollama` 时用本地 `qwen2.5:0.5b`
 
-| Embedding
+| Embedding 模型
 | Ollama (bge-m3:latest)
-| 1024 维向量
+| 1024 维；**不受 `chat.provider` 影响**，始终走 Ollama
 
 | 向量数据库
 | Milvus (SDK 2.6.21)
@@ -60,28 +74,97 @@
 
 | 混合检索
 | Lucene 9.11.1 BM25 + Milvus 向量
-| RRF 算法融合
+| 并行召回 `retrieveK = max(topK*2, 20)`，RRF 融合（`k=60`、dense 0.7 / sparse 0.3）
 
 | BM25 持久化
-| Redis Cloud
-| 索引自动恢复
+| Redis / Redis Stack
+| 仅存文档正文与 docId 集合，重启后可重建（注意会丢失 metadata）
+
+| 会话记忆
+| Redis List `rag:session:{id}`
+| 裁剪至 12 条，TTL 24h，两条通道共用
+
+| Agentic 运行时
+| `AgentRuntimeService`
+| 有界：`MAX_TOOL_CALLS=3`、`MAX_TOP_K=20`、`MAX_CONTEXT_CHARS=12000`，均为硬编码常量
 
 | Rerank 精排
 | 硅基流动 API (BAAI/bge-reranker-v2-m3)
-| 提升检索相关性
+| 提升检索相关性；失败降级为原序
+
+| 文档摄取
+| DeepSeek-OCR + PDFBox + Apache POI
+| PDF 页面转 Markdown，`RAGFlowDocxParser` 处理 docx
+
+| Token 治理
+| jtokkit 1.1.0（CL100K_BASE）
+| `TokenLimitEnforcer` 安全阈值 6000，对齐批量策略上限 7372
 
 | 前端
 | React 18.2 + Bootstrap 5.3
-| 聊天界面（React Bootstrap 2.9）
+| 聊天界面（React Bootstrap 2.9），hash 路由与双通道入口页
+
+| 评测
+| DeepEval (Python) + LLM-as-a-Judge (Java)
+| `DeepEvalSpringAIRAG/` 与 `*EvaluationTest`，裁判模型 `THUDM/GLM-Z1-9B-0414`
 
 | 构建工具链
 | Maven 3.6.3+ / Node v18.16.0 + npm 9.5.1
-| 后端与前端构建环境
+| 后端与前端构建环境；仓库未提交 Maven Wrapper，`frontend-maven-plugin` 也未声明
 
 | 测试基础设施
 | JaCoCo 0.8.16 + Testcontainers 1.21.4
 | 覆盖率报告与容器集成测试
 |===
+
+=== 两条问答通道
+
+两条通道共用同一套检索栈、同一份 Redis 会话存储与同一个 React 页面，仅控制流不同。
+
+[cols="1,1,2"]
+|===
+| 维度 | Native | Agentic
+
+| 端点
+| `POST /chat/{chatId}`
+| `POST /api/agent/chat`
+
+| 服务类
+| `RagService`
+| `AgentRuntimeService`
+
+| 执行模型
+| 异步 `CompletableFuture` + `orTimeout(65s)`
+| 同步（不受 async 超时层级保护）
+
+| 检索轮数
+| 严格 1 次
+| 最多 `MAX_TOOL_CALLS = 3` 次
+
+| 查询规划
+| 无，直接用原始问题
+| `QueryPlanner` 拆复合问题为子查询
+
+| 请求体
+| `{prompt}`
+| `{sessionId, question, topK?}`
+
+| 响应体
+| `{message}`
+| `{traceId, answer, evidence, plan, grounded}`（`api.js` 将 `answer` 镜像为 `message`）
+
+| 引用校验
+| 无
+| `GroundingChecker` 要求至少一个 `[证据 N]` 且 ID 全部可回查
+
+| 前端入口
+| `#/native`
+| `#/agentic`（额外渲染可折叠证据面板）
+|===
+
+Agentic 是*有界*运行时而非开放式工具循环：所有上限都是 `AgentRuntimeService` 里的编译期常量（`MAX_TOOL_CALLS=3`、`DEFAULT_TOP_K=5`、`MAX_TOP_K=20`、`MAX_CONTEXT_CHARS=12_000`），控制流全部留在 Java，LLM 只写文本、从不决定下一个要调哪个工具。
+
+行为通过接口选配，依赖缺失时自动降级：`RetrievalTool`（`HybridRetrievalTool` / `VectorOnlyRetrievalTool`，由 `hybrid.search.enabled` 决定）、`QueryPlanner`、`ConversationMemory`、`VectorStoreStrategy`。
 
 == 前置条件
 
@@ -133,9 +216,11 @@ ollama pull qwen2.5:0.5b
 ollama pull bge-m3:latest
 ----
 
-=== 硅基流动 API Key（可选，用于 Rerank）
+其中 `bge-m3:latest` 是**必须**的：Embedding 始终由 Ollama 提供，没有它文档无法入库、查询无法向量化。`qwen2.5:0.5b` 仅在切回 `chat.provider=ollama` 时需要。
 
-从 link:https://cloud.siliconflow.cn/[硅基流动控制台] 获取 API Key。
+=== 硅基流动 API Key
+
+从 link:https://cloud.siliconflow.cn/[硅基流动控制台] 获取 API Key。仓库默认 `chat.provider=openai` 指向硅基流动，且 Rerank 与 DeepSeek-OCR 也共用这个 Key，因此**本地跑起来就需要**，不再是可选项。
 
 == 配置
 
@@ -143,48 +228,51 @@ ollama pull bge-m3:latest
 
 [source,console]
 ----
-# Rerank 功能 (可选)
+# Chat / Rerank / DeepSeek-OCR 共用（必需）
 export SILICONFLOW_KEY=<你的硅基流动API Key>
 
-# Redis Cloud (可选，用于 BM25 索引持久化)
-export REDIS_HOST=<Redis 云服务地址>
+# Redis (会话记忆与 BM25 文档持久化)
+export REDIS_HOST=<Redis 服务地址>
 export REDIS_PORT=6379
 export REDIS_PASSWORD=<Redis 密码>
 ----
 
+NOTE: `REDIS_HOST` 只填主机名，不要把端口拼进去。若 Redis 不可用，BM25 持久化会自动熔断（`redisAvailable=false`）并降级为纯内存索引，应用仍可用。
+
 === 应用配置 (application.properties)
 
-[source,properties]
+下面的片段摘自 `src/main/resources/application.properties`，注释标出了容易误改的项。该代码块特意关闭了属性替换，否则块内的美元符花括号环境变量占位符会被当成未定义属性而渲染为空。
+
+[source,properties,subs="specialcharacters,macros,callouts"]
 ----
 # --- 模型提供者配置 ---
-# 可选值: ollama, openai
-# 默认使用 ollama
+# 可选值: ollama, openai；仓库当前值为 openai（非 ollama）
 chat.provider=openai
 
 # --- Ollama 配置 (当 chat.provider=ollama 时生效) ---
 spring.ai.ollama.base-url=http://127.0.0.1:11434
-# Embedding 模型
 spring.ai.ollama.embedding.options.model=bge-m3:latest
-# Chat 模型
 spring.ai.ollama.chat.options.model=qwen2.5:0.5b
+spring.ai.ollama.connection-timeout=60s
+spring.ai.ollama.read-timeout=60s
 # Embedding 调用超时（Spring Boot 4.2 起 OllamaApi 默认请求工厂为 Reactor Netty，隐含约 10s 读超时）
 spring.ai.ollama.embedding.connect-timeout=10s
 spring.ai.ollama.embedding.read-timeout=300s
 
-# --- OpenAI 配置 (当 chat.provider=openai 时生效) ---
-# 推荐使用环境变量 SILICONFLOW_KEY 设置 API Key
+# --- OpenAI 兼容配置 (当 chat.provider=openai 时生效) ---
+# 推荐使用环境变量 SILICONFLOW_KEY 设置 API Key（优先级高于 OPENAI_API_KEY）
 spring.ai.openai.api-key=${SILICONFLOW_KEY:}
 spring.ai.openai.base-url=https://api.siliconflow.cn
 spring.ai.openai.chat.model=Qwen/Qwen3-8B
 
 # --- Milvus 向量库配置 ---
-# 本机运行后端填 127.0.0.1；compose 网络内填 standalone；端口在 RagConfiguration 中固定为 19530
-spring.ai.vectorstore.milvus.client.host=10.1.1.234
-spring.ai.vectorstore.milvus.client.port=19530
+# 本机运行后端填 127.0.0.1；compose 网络内填 standalone
+spring.ai.vectorstore.milvus.client.host=192.168.0.223
 spring.ai.vectorstore.milvus.collection-name=paper_collection_vpdf
+spring.ai.vectorstore.milvus.embeddingDimension=1024
 
 # --- RAG 检索配置 ---
-# 初筛召回数量
+# 初筛召回数量（混合检索内部取 max(topK*2, 20)）
 topk=10
 # Rerank 精排开关
 rerank.enabled=true
@@ -194,33 +282,50 @@ rerank.topN=5
 # --- 文档处理与切块配置 ---
 # 切块算法: markdown (默认, 基于语义) 或 token (基于长度)
 chunking.algorithm=markdown
-
-# Markdown 切块参数
-chunking.markdown.chunkTokenNum=4096
-# 语义分割符
-chunking.markdown.delimiter=\n!?;。；！？
-# 表格单独切块
+chunking.markdown.chunkTokenNum=800
+# 语义分割符；中文标点必须写成 \uXXXX 转义，否则 .properties 的 ISO-8859-1 读取会乱码
+chunking.markdown.delimiter=\n!?;\u3002\uFF1B\uFF01\uFF1F
 chunking.markdown.separateTables=true
 
 # --- DeepSeek-OCR 配置 ---
-# 启用 DeepSeek OCR 处理 PDF
 deepseek-ocr.enabled=true
 deepseek-ocr.model=deepseek-ai/DeepSeek-OCR
 
 # --- 混合检索配置 (Lucene BM25 + Milvus Vector) ---
-# 开启后使用 BM25 关键词检索 + 向量语义检索，RRF 融合结果
 hybrid.search.enabled=true
+hybrid.search.collection-name=paper_collection_vpdf
 hybrid.search.rrf.k=60
 hybrid.search.dense.weight=0.7
 hybrid.search.sparse.weight=0.3
 
-# --- Redis 持久化 (可选，用于 BM25 索引持久化) ---
+# --- Redis (会话记忆 + BM25 文档持久化) ---
 spring.data.redis.host=${REDIS_HOST:localhost}
 spring.data.redis.port=${REDIS_PORT:6379}
 spring.data.redis.password=${REDIS_PASSWORD:}
+spring.data.redis.ssl.enabled=false
+
+# --- 异步链路超时，必须大于 RagController 的 orTimeout(65s) ---
+spring.mvc.async.request-timeout=90000
 ----
 
+WARNING: 并非所有看起来合理的配置项都生效。`RagConfiguration` 硬编码了 `MetricType.COSINE`、`IndexType.IVF_FLAT`、`databaseName("default")` 与端口 `19530`，所以 `spring.ai.vectorstore.milvus.metric-type=IP`、`client.port`、`index-type` 改了无效。
+
+WARNING: 遗留耦合——`RagConfiguration` 仍注入 `${spring.ai.vectorstore.pinecone.index-name}` 且**没有默认值**。尽管已不用 Pinecone，`application.properties` 里的 `spring.ai.vectorstore.pinecone.*` 仍必须保留，删掉会导致应用**启动失败**。
+
+NOTE: 超时阶梯是刻意设计的：上游模型读超时 60s < `orTimeout(65s)` < `spring.mvc.async.request-timeout=90000`。错位会导致对外 503，友好错误文案永远回不到前端。注意 `/api/agent/chat` 是同步端点，65s / 90s 两级均不适用。
+
 == 运行
+
+先构建前端。`pom.xml` 并未声明 `frontend-maven-plugin`（只有一个同名版本属性），实际是 `maven-resources-plugin` 在 `process-classes` 阶段把 `frontend/build` 拷进 `target/classes/static`，所以产物必须事先存在。
+
+[source,console]
+----
+cd frontend
+npm install
+npm run build
+----
+
+再启动后端。仓库内没有 Maven Wrapper，直接用本地 `mvn`：
 
 [source,console]
 ----
@@ -229,9 +334,13 @@ cd {project-name}
 mvn spring-boot:run
 ----
 
-应用启动后，访问 link:http://localhost:8080[http://localhost:8080]。
+应用启动后，访问 link:http://localhost:8080[http://localhost:8080]，在入口页选择 Native 或 Agentic 通道。
+
+WARNING: `Dockerfile` 的构建阶段仍写着 `RUN ./mvnw verify`，在补上 Maven Wrapper 或改为 `mvn verify` 之前无法构建成功。
 
 == RAG 工作流程
+
+Native 通道（`POST /chat/{chatId}`，异步，严格检索 1 轮）：
 
 [source]
 ----
@@ -241,16 +350,102 @@ mvn spring-boot:run
    ├── BM25 关键词检索 (Lucene 内存索引)
    └── 向量语义检索 (Milvus TopK)
       │
-3. RRF 结果融合
+3. RRF 结果融合 (按 docId 聚合)
       │
-4. Rerank 精排 (SiliconFlow TopN=5) [可选]
+4. Rerank 精排 (SiliconFlow topN=5) [可选，失败降级为原序]
       │
-5. 构建 Prompt + 上下文文档
+5. 拼装 prompts/system-qa.st + 上下文文档
       │
 6. LLM 生成回答 (Ollama/OpenAI)
       │
-7. 返回结果
+7. 写入 Redis 会话记忆，返回 {message}
 ----
+
+Agentic 通道（`POST /api/agent/chat`，同步，最多 3 轮检索）：
+
+[source]
+----
+1. 读取会话历史 (RedisConversationMemory)
+      │
+2. RuleBasedQueryPlanner 拆分复合问题为子查询
+      │
+3. 逐个子查询调用 RetrievalTool (≤ MAX_TOOL_CALLS=3)
+   ├── hybrid.search.enabled → HybridRetrievalTool (BM25 + 向量 + RRF)
+   └── 否则               → VectorOnlyRetrievalTool
+      │
+4. EvidenceMapper 映射为 Evidence（取 rerank_score→score→distance→fusion_score）
+      │
+5. ContextBuilder 按 12000 字符预算拼装上下文
+      │
+6. AnswerGenerator 生成带 [证据 N] 引用的回答
+      │
+7. GroundingChecker 校验引用 ID 均可回查 → grounded 标志
+      │
+8. 返回 {traceId, answer, evidence, plan, grounded}
+----
+
+证据为空时不会调用 LLM，而是返回稳定的拒答文案。
+
+== REST 端点
+
+[cols="1,2,3"]
+|===
+| 方法与路径 | 作用 | 说明
+
+| `POST /chat/startChat`
+| 创建会话
+| 返回 `{chatId}`；同时可当 agent 的 `sessionId` 使用
+
+| `POST /chat/{chatId}`
+| Native 提问
+| 请求体 `{prompt}`，响应 `{message}`；异步 + `orTimeout(65s)`
+
+| `GET /chat/history/{chatId}`
+| 对话历史
+| 返回 `{sessionId, messages[{role,content}]}`；无历史也返 200
+
+| `POST /api/agent/chat`
+| Agentic 提问
+| 请求体 `{sessionId, question, topK?}`；响应 `answer` 由前端复制为 `message`
+
+| `GET /api/agent/history/{sessionId}`
+| Agentic 历史
+| 与 Native 共用 `ConversationHistoryService`
+
+| `POST /retrieve`
+| 仅检索、不生成
+| 供 Python 评测算 Context Recall
+
+| `GET /admin/bm25/status`
+| BM25 自检
+| 内存/Redis/Milvus 三处计数、健康与一致性判定
+
+| `POST /admin/bm25/rebuild`
+| 重建 BM25
+| 返回 `{success, bm25DocumentCount, message, error}`，失败为 500
+
+| `POST /documents/upload`
+| 上传入口
+| *占位实现*，始终返回 `Document upload not supported`
+|===
+
+== 评测
+
+两套独立的评测栈：
+
+[source,console]
+----
+# Python / DeepEval：从 Milvus 切块合成 goldens，经 /retrieve 算 Context Recall
+cd DeepEvalSpringAIRAG
+pip install -r requirements.txt
+python 1_generate_testset.py
+python -m src.main
+
+# Java / LLM-as-a-Judge：需 SILICONFLOW_KEY，否则自动跳过
+mvn test -Dtest=FaithfulnessEvaluationTest
+----
+
+WARNING: 仓库自带的 `evaluation_report.json` 当前为 `0.0`，且 ID 命中率 helper 传入空列表永远返回 `0`，不能当作质量信号。另外 `DeepEvalSpringAIRAG/src/config.py` 默认连 `10.1.1.234`，而后端 `application.properties` 指向 `192.168.0.223`，两边可能不是同一个集合。
 
 == 项目结构
 
@@ -258,22 +453,43 @@ mvn spring-boot:run
 ----
 src/main/java/com/redis/demo/spring/ai/
 ├── RagApplication.java           # 应用入口
-├── RagController.java            # REST API 控制器
-├── RagConfiguration.java         # Spring 配置
-├── RagDataLoader.java            # 数据初始化加载器
-└── service/
-    ├── RagService.java           # RAG 核心服务
-    ├── RerankService.java        # Rerank 精排服务
-    ├── BM25SearchService.java    # Lucene BM25 检索服务
-    ├── HybridSearchService.java  # 混合检索融合服务
-    └── BM25DocumentPersistenceService.java  # Redis 持久化
+├── RagController.java            # Native 通道 + /retrieve + /admin/bm25/*
+├── AgentChatController.java      # Agentic 通道 /api/agent/**
+├── RagConfiguration.java         # Milvus 客户端、向量库与 RetrievalTool Bean
+├── RagDataLoader.java            # 启动时计数检查、数据摄取、BM25 重建
+├── agent/
+│   ├── AgentRuntimeService.java  # 有界运行时，控制流中枢
+│   ├── QueryPlanner.java         # 接口；RuleBasedQueryPlanner 为当前实现
+│   ├── RetrievalTool.java        # 接口；Hybrid / VectorOnly 两种实现
+│   ├── ContextBuilder.java       # 字符预算内拼装上下文
+│   ├── EvidenceMapper.java       # Document → Evidence
+│   ├── GroundingChecker.java     # 引用校验
+│   └── AnswerGenerator.java      # LLM 生成
+├── service/
+│   ├── RagService.java           # Native 链路核心
+│   ├── HybridSearchService.java  # 并行召回 + RRF 融合
+│   ├── BM25SearchService.java    # Lucene BM25
+│   ├── BM25DocumentPersistenceService.java  # Redis 持久化
+│   ├── RerankService.java        # SiliconFlow 精排
+│   ├── ConversationHistoryService.java      # 历史查询
+│   ├── DeepSeekOcrDocumentReader.java       # PDF → Markdown
+│   └── VectorStoreStrategy*.java # Milvus / 通用 两种策略
+├── memory/                       # ConversationMemory / RedisConversationMemory
+├── model/                        # 请求/响应 record 与 Evidence / RetrievalResult
+├── util/                         # FileDownloader、MarkdownProcessor、TokenLimitEnforcer
+└── parse/                        # RAGFlowDocxParser
+
+DeepEvalSpringAIRAG/              # 独立的 Python 评测子系统
+frontend/                         # React CRA，build 产物被拷入 jar
 ----
 
 == 相关文档
 
-* link:Architecture.md[技术架构详解]
+* link:Architecture.md[技术架构详解]——组件拓扑、条件装配矩阵、数据流、数据结构与 metadata 字典、存储层布局、前后端契约、已知限制与技术债
 * link:DOCKER-README.md[Docker 部署指南]
 * link:TEST-README.md[测试说明]
+* link:frontend/front-end.md[前端说明]
+* link:src/docs/MIGRATION-BOOT-4.2.0-SPRING-AI-2.1.0-RECORD.md[Boot 4.2.0 / Spring AI 2.1.0 迁移记录]
 
 == License
 

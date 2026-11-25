@@ -5,6 +5,10 @@
 
 本项目是一个基于 Spring Boot 4.2.0 和 Spring AI 2.1.0 的检索增强生成（RAG）演示应用，结合了 Milvus 向量数据库和大型语言模型（LLM），实现面向领域知识文档的智能问答。
 
+检索为混合模式——Lucene BM25 与 Milvus 向量检索并行召回，经 RRF 融合，再可选调用外部 cross-encoder 精排。在此之上，应用同时提供**两条独立的问答通道**：单次检索的 *Native* 链路，以及带查询规划、多轮检索与引用校验的 *Agentic* 有界运行时链路。
+
+完整的架构解读（数据流、数据结构、存储布局、前后端契约）见 [Architecture.md](Architecture.md)。
+
 ---
 
 ## 🛠️ 技术栈清单
@@ -44,7 +48,7 @@
 | --- | --- | --- |
 | **Maven** | `3.6.3+` | 后端项目依赖管理及构建工具。 |
 | **Node.js & npm** | Node `v18.16.0`+, npm `9.5.1`+ | 前端运行环境及包管理工具。 |
-| **Frontend Maven Plugin** | `1.15.0` | 在 Maven 构建生命周期中自动构建前端项目（如下载 Node 并执行 `npm run build`）。 |
+| **maven-resources-plugin** | Maven 默认 | 在 `process-classes` 阶段将已构建好的 `frontend/build` 拷入 `target/classes/static`，使 React SPA 与应用共用同一个 jar。**注意**：`pom.xml` 只声明了 `frontend-maven-plugin.version` 属性，并**没有**对应的 `<plugin>` 块，因此 Maven 不会下载 Node、也不会执行 `npm run build`，前端必须单独构建。 |
 | **Docker & Compose** | `20+` | 容量化技术，统一编排 Redis、Milvus、应用本身等组件的部署环境，解决依赖冲突问题。 |
 | **JaCoCo** | `0.8.16` | 代码覆盖率工具，在测试阶段生成统计报告，保障代码质量。 |
 | **Testcontainers** | `1.21.4` | 集成测试用的容器运行时（Milvus 容器测试）。Spring Boot 4.2.0 不再统一管理该版本，已在 `pom.xml` 中显式钉住。 |
@@ -173,6 +177,105 @@ deepseek-ocr.model=deepseek-ai/DeepSeek-OCR
 
 ---
 
+## 🔀 两条问答通道
+
+两条通道共用同一套检索栈、同一份会话存储与同一个 React 页面，区别只在控制流。
+
+| | Native 通道 | Agentic 通道 |
+| --- | --- | --- |
+| 端点 | `POST /chat/{chatId}` | `POST /api/agent/chat` |
+| 服务 | [`RagService.java`](src/main/java/com/redis/demo/spring/ai/service/RagService.java) | [`AgentRuntimeService.java`](src/main/java/com/redis/demo/spring/ai/agent/AgentRuntimeService.java) |
+| 执行模型 | 异步（`CompletableFuture`） | 同步 |
+| 检索轮数 | 严格 1 次 | 最多 `MAX_TOOL_CALLS = 3` 次 |
+| 查询规划 | 无，直接用原始问题检索 | `QueryPlanner` 将复合问题拆为子查询 |
+| 请求体 | `{ "prompt": "..." }` | `{ "sessionId", "question", "topK"? }` |
+| 响应体 | `{ "message": "..." }` | `answer` + `evidence[]` + `plan` + `grounded` + `traceId`；`api.js` 会把 `answer` 镜像到 `message`，使 `ChatWindow` 无需修改即可兼容两条通道 |
+| 引用校验 | 无 | `GroundingChecker` 要求至少一个 `[证据 N]` 标记，且每个引用的 ID 必须能在返回的证据中回查 |
+| 前端入口 | `#/native` | `#/agentic`（额外渲染可折叠证据面板） |
+
+Agentic 通道是**有界**运行时，不是开放式工具循环：所有上限都是 `AgentRuntimeService` 里的编译期常量（`MAX_TOOL_CALLS = 3`、`DEFAULT_TOP_K = 5`、`MAX_TOP_K = 20`、`MAX_CONTEXT_CHARS = 12_000`），控制流全部留在 Java，LLM 只负责生成文本，从不决定下一个要调用哪个工具。
+
+行为通过接口选配，任一依赖缺失时通道可自动降级而不需改代码：
+
+| 接口 | 实现 | 选择依据 |
+| --- | --- | --- |
+| `RetrievalTool` | `HybridRetrievalTool` / `VectorOnlyRetrievalTool` | `hybrid.search.enabled` |
+| `QueryPlanner` | `RuleBasedQueryPlanner`（正则 + 关键词拆分，不调 LLM） | 目前固定为该实现 |
+| `ConversationMemory` | `RedisConversationMemory` | Redis 可用性 |
+| `VectorStoreStrategy` | `MilvusVectorStoreStrategy` / `GenericVectorStoreStrategy` | `spring.ai.vectorstore.milvus.client.host` |
+
+> ⏱️ **超时注意。** Native 链路处于一个刻意设计的阶梯：上游模型读超时 60s < `orTimeout(65, TimeUnit.SECONDS)` < `spring.mvc.async.request-timeout=90000`，因此 LLM 变慢时前端能拿到可读的中文错误而不是裸 503。`/api/agent/chat` 是**同步**端点，65s 和 90s 两级均不适用于它；只有单个出向调用各自有上限（生成 60s、rerank 20s），整轮（3 次检索 + rerank + 生成）没有请求级预算——这也是 DeepEval 的 agent 客户端将超时设为 90s 的原因。若要对齐 Native，需把入口也改为 `CompletableFuture`。详见 [Architecture.md §3.8](Architecture.md)。
+
+---
+
+## 🌐 REST 端点总表
+
+| 方法 | 路径 | 作用 | 说明 |
+| --- | --- | --- | --- |
+| `POST` | `/chat/startChat` | 创建会话 | 返回 `{ "chatId": "<uuid>" }`；同时作为 agent 的 `sessionId` 使用 |
+| `POST` | `/chat/{chatId}` | Native 提问 | 请求体 `{ "prompt": "..." }`，返回 `{ "message": "..." }` |
+| `GET` | `/chat/history/{chatId}` | 对话历史 | 返回 `{ sessionId, messages: [{ role, content }] }` |
+| `POST` | `/api/agent/chat` | Agentic 提问 | 请求体 `{ sessionId, question, topK? }`；响应中的 `answer` 由前端复制为 `message`，后端并不接收 `message` 入参 |
+| `GET` | `/api/agent/history/{sessionId}` | Agentic 历史 | 与 Native 共用 `ConversationHistoryService` |
+| `POST` | `/retrieve` | 仅检索、不生成 | 供 DeepEval 计算 Context Recall |
+| `GET` | `/admin/bm25/status` | BM25 索引自检 | 内存/Redis/Milvus 三处计数、健康与一致性判定 |
+| `POST` | `/admin/bm25/rebuild` | 从原始语料重建 BM25 | 返回 `{ success, bm25DocumentCount, message, error }`，失败为 500 |
+| `POST` | `/documents/upload` | 上传入口 | **占位实现**，始终返回 `Document upload not supported` |
+
+两条通道读写同一份 Redis 会话存储，因此 `/chat/startChat` 返回的 `chatId` 可以直接当 agent `sessionId` 用，反之亦然；前端入口页依赖这一点。
+
+---
+
+## 📥 文档如何进入索引
+
+`RagDataLoader` 是一个 `ApplicationRunner`，启动时先统计集合记录数，**已有 ≥ 10 条则跳过整个摄取流程**。
+
+需要注意 `src/main/resources/data/` 在本仓库中是空目录，真实的摄取链路是远程下载：
+
+1. `FileDownloader.DATA_BEERS_JSON_GZ` 拉取 `https://arxiv.org/pdf/2506.10380`（TableRAG 论文），落为临时文件 `beers-<随机数>.pdf`。
+2. `deepseek-ocr.enabled=true` 时，`DeepSeekOcrDocumentReader` 以 100 DPI 光栅化每页、按 0.9 质量编为 JPEG，用 4 个线程发往硅基流动 DeepSeek-OCR 得到 Markdown。`ocr-output/` 下的文件正是这一步的产物。
+3. `MarkdownProcessor` 按标题、段落、表格切块，`chunkTokenNum=800`（jtokkit `CL100K_BASE` 计数）；`TokenLimitEnforcer` 再对超过 6000 token 安全阈值的块二次切分，对齐 `TokenCountBatchingStrategy` 的 7372 token 上限。
+4. 每个切块同时写入向量库**和** Lucene BM25 索引；索引持久化到 Redis，形如 `bm25:doc:{docId}`（正文截断 2000 字符）加 `bm25:index:docs` 集合。
+
+将 `deepseek-ocr.enabled` 置为 `false` 可回退到纯 PDFBox 文本抽取；`.docx` 走 `RAGFlowDocxParser`，JSON 走 `JsonReader`。
+
+---
+
+## 🧪 评测体系
+
+仓库内有两套互相独立的评测栈，衡量的维度不同。
+
+### Python / DeepEval——[`DeepEvalSpringAIRAG/`](DeepEvalSpringAIRAG/)
+
+```bash
+cd DeepEvalSpringAIRAG
+pip install -r requirements.txt    # deepeval>=2.0、pymilvus、openai、pytest
+python 1_generate_testset.py       # Synthesizer 生成 goldens -> rag_test_dataset.json
+python -m src.main                 # -> evaluation_report.json
+python -m pytest tests -q          # 评测工具自身的单测
+```
+
+需要 `SILICONFLOW_KEY`。goldens 从 Milvus 集合 `paper_collection_vpdf` 的切块合成，Context Recall 通过 `POST /retrieve` 打分、阈值 `0.7`；`src/agent_client.py` 还会经 `POST /api/agent/chat` 跑完整的 agent 端到端链路，客户端超时 90s。
+
+### Java / LLM-as-a-Judge——[`src/test/java/com/redis/demo/spring/ai/`](src/test/java/com/redis/demo/spring/ai/)
+
+| 测试类 | 数据集 | 裁判配置 |
+| --- | --- | --- |
+| `FaithfulnessEvaluationTest` | `test-data/faithfulness-test-cases.json` | `evaluation.factuality.threshold=0.8` |
+| `CorrectnessEvaluationTest` | `test-data/correctness-test-cases.json` | `evaluation.relevance.threshold=0.7` |
+| `RagEvaluationTest` | `test-data/rag-test-cases.json` | 检索层校验 |
+
+它们标注了 `@TestPropertySource("classpath:application-evaluation.properties")` 与 `@EnabledIfEnvironmentVariable(named = "SILICONFLOW_KEY", matches = ".+")`，因此没配 Key 时会直接跳过而非失败。裁判模型为 `THUDM/GLM-Z1-9B-0414`。
+
+> ⚠️ 参考评分前先看两条限定。仓库里提交的 `evaluation_report.json` 当前为 `0.0`，且 goldens 被 judge 提示文本污染；ID 命中率 helper 传入的是空检索列表，永远返回 `0`。另外 Python 侧默认连的是 Milvus `10.1.1.234`，而后端 `application.properties` 指向 `192.168.0.223`——评测的集合与实际服务的集合可能不是同一个。
+
+```bash
+mvn clean verify                            # 单测 + *IntegrationTest，生成 JaCoCo 报告
+mvn test -Dtest=FaithfulnessEvaluationTest   # 裁判类测试，需 SILICONFLOW_KEY
+```
+
+---
+
 ## 💻 环境依赖要求
 
 为了避免环境冲突，请确保您的开发和运行环境满足以下最低兼容版本：
@@ -218,6 +321,10 @@ docker-compose logs -f standalone
 
 后端在宿主机运行时，`spring.ai.vectorstore.milvus.client.host` 填 `127.0.0.1`；跑在同一 compose 网络内时填服务名 `standalone`（`spring` 服务已通过 `SPRING_AI_VECTORSTORE_MILVUS_CLIENT_HOST` 覆盖）。端口在 `RagConfiguration` 中固定为 `19530`。镜像源 retag、数据卷与安全提示、停止清理步骤详见 [DOCKER-README.md](DOCKER-README.md)。
 
+> ⚠️ `RagConfiguration` 硬编码了集合参数——`MetricType.COSINE`、`IndexType.IVF_FLAT`、`databaseName("default")` 与端口 `19530`。像 `spring.ai.vectorstore.milvus.metric-type=IP` 这样的配置项无人读取，改了也**不生效**。实际生效的只有 `embeddingDimension` 与 host / collection-name。
+
+> 🧟 遗留耦合：`RagConfiguration` 仍注入了 `${spring.ai.vectorstore.pinecone.index-name}` 且**没有默认值**，所以尽管已不再使用 Pinecone，`application.properties` 里的 `spring.ai.vectorstore.pinecone.*` 仍必须保留——删掉会导致应用**启动失败**。
+
 ### 2. 下载并运行本地模型（Ollama）
 
 确保已安装 [Ollama](https://ollama.com/)：
@@ -250,29 +357,30 @@ export REDIS_PORT=6379
 export REDIS_PASSWORD=你的Redis密码
 ```
 
-### 4. 编译与启动后端服务
+### 4. 构建前端
 
-由于使用了 `frontend-maven-plugin`，Maven 会在构建时自动完成前端的下载、依赖安装与编译。
-
-```bash
-# Windows
-mvnw.cmd clean install -DskipTests
-mvnw.cmd spring-boot:run
-
-# macOS / Linux
-./mvnw clean install -DskipTests
-./mvnw spring-boot:run
-```
-
-应用启动后，将在端口 `8080` 监听。访问 [http://localhost:8080](http://localhost:8080) 即可看到前端 React 界面。
-
-附：单独启动前端的命令：
+Maven **不会**替你构建前端：`pom.xml` 只有一个 `frontend-maven-plugin.version` 属性而无插件声明。实际是 `maven-resources-plugin` 在 `process-classes` 阶段将 `frontend/build` 拷进 `target/classes/static`，因此产物必须事先存在。
 
 ```bash
 cd frontend
 npm install
-npm start
+npm run build        # 生成 frontend/build
 ```
+
+如果只想调试界面、不想反复重打 jar，改用 `npm start`（CRA 会代理到 `:8080`）。
+
+### 5. 编译并启动后端
+
+仓库内**没有 Maven Wrapper**（不存在 `mvnw` / `mvnw.cmd`），请直接使用本地 Maven：
+
+```bash
+mvn clean install -DskipTests
+mvn spring-boot:run
+```
+
+应用启动后监听 `8080` 端口。访问 [http://localhost:8080](http://localhost:8080) 即可看到 React 界面，入口页可选择 Native 或 Agentic 通道。
+
+> 🐳 `Dockerfile` 的构建阶段仍在执行 `./mvnw verify`，在补上 Maven Wrapper 或改为 `mvn verify` 之前，该镜像构建路径跑不通。
 
 ---
 
@@ -280,25 +388,45 @@ npm start
 
 ```text
 spring-ai-redis-demo/
-├── frontend/                       # React 前端工程目录
-│   ├── public/                     # 静态资源（HTML 模板、图标等）
-│   ├── src/                        # 前端源代码
-│   │   ├── Components/             # 界面组件（如 ChatWindow）
-│   │   ├── App.js / api.js         # 前端根组件与 API 请求封装
-│   └── package.json                # 前端依赖配置
-├── src/
-│   ├── main/
-│   │   ├── java/com/redis/demo/    # 后端 Java 核心业务逻辑
-│   │   │   ├── RagApplication.java # Spring Boot 启动类
-│   │   │   ├── RagController.java  # REST API 路由
-│   │   │   ├── RagConfiguration.java# AI 及向量数据库 Bean 配置
-│   │   │   ├── RagDataLoader.java  # 应用启动时初始数据的预处理和注入
-│   │   │   └── service/            # RAG、精排、BM25 搜索等业务服务
-│   │   └── resources/              # 后端配置（application.properties 等）
-│   └── test/                       # 单元测试与集成测试
-├── Dockerfile                      # 应用容器构建文件
-├── docker-compose.yml              # 依赖服务编排文件
-└── pom.xml                         # Maven 构建与依赖管理配置文件
+├── frontend/                         # React（CRA）前端
+│   ├── src/Components/               # EntryPage（通道选择页）、ChatWindow、ChatBubble
+│   ├── src/Services/ChatService.js   # 流式 / 传统聊天传输
+│   ├── src/api.js                    # 所有后端调用的唯一出口，统一 ok 标志契约
+│   └── build/                        # npm 产物，由 Maven 拷入 jar
+├── src/main/java/com/redis/demo/spring/ai/
+│   ├── RagApplication.java           # Spring Boot 启动类
+│   ├── RagController.java            # Native 通道 + /retrieve + /admin/bm25/*
+│   ├── AgentChatController.java      # Agentic 通道（/api/agent/**）
+│   ├── RagConfiguration.java         # Milvus 客户端、向量库与 RetrievalTool Bean
+│   ├── RagDataLoader.java            # ApplicationRunner：计数检查、摄取、BM25 重建
+│   ├── agent/                        # 有界 agent 运行时：QueryPlanner、RetrievalTool、
+│   │                                 # ContextBuilder、EvidenceMapper、GroundingChecker、
+│   │                                 # AnswerGenerator、AgentRuntimeService
+│   ├── service/                      # RagService、HybridSearchService、BM25SearchService、
+│   │                                 # RerankService、BM25DocumentPersistenceService、
+│   │                                 # ConversationHistoryService、DeepSeekOcrDocumentReader、
+│   │                                 # HybridDocumentService、VectorStoreStrategy*
+│   ├── memory/                       # ConversationMemory / RedisConversationMemory
+│   ├── model/                        # 请求/响应 record 与 Evidence / RetrievalResult
+│   ├── parse/                        # RAGFlowDocxParser
+│   ├── util/                         # FileDownloader、MarkdownProcessor、TokenLimitEnforcer、
+│   │                                 # ImageExtractor/Associator、OllamaRestClientFactory
+│   └── config/                       # ChatModelConfiguration、SSLConfig
+├── src/main/resources/
+│   ├── application.properties
+│   ├── prompts/system-qa.st          # Native 通道的系统提示模板
+│   └── static/                       # 对外服务的前端（构建期填充）
+├── src/test/                         # 单测、集成测试与 LLM-as-a-Judge 评测测试
+├── DeepEvalSpringAIRAG/              # Python DeepEval 评测子系统（独立）
+│   ├── src/{main,config,agent_client}.py
+│   ├── src/services/                 # evaluator、spring_ai_service、milvus_service
+│   ├── 1_generate_testset.py         # golden 集合成
+│   └── tests/                        # 评测工具自身的 pytest 套件
+├── ocr-output/                       # DeepSeek-OCR 摄取链路产出的 Markdown
+├── Architecture.md                   # 完整架构 / 数据流 / 数据结构参考
+├── Dockerfile                        # 多阶段容器构建
+├── docker-compose.yml                # etcd + MinIO + Milvus + Redis Stack + 应用
+└── pom.xml                           # Maven 构建与依赖管理
 ```
 
 ---
@@ -321,22 +449,51 @@ spring-ai-redis-demo/
 
 ## ❓ 常见问题排查（Troubleshooting）
 
-1. **前端编译失败或 Node 找不到**
-    - **问题表现**：运行 `mvn clean install` 时在 `frontend-maven-plugin` 步骤报错。
-    - **解决方案**：检查系统是否正确安装 Node.js（`v18+`），或者清理 Maven 缓存后重试。也可以手动进入 `frontend` 目录执行 `npm install` 与 `npm run build`。
+1. **页面空白或前端改动不生效**
+    - **问题表现**：执行 `mvn spring-boot:run` 后界面仍是旧版。
+    - **原因**：应用服务的是 `target/classes/static`，它在 `process-classes` 阶段从 `frontend/build` 拷入；Maven 根本不会调 npm。
+    - **解决方案**：先在 `frontend/` 执行 `npm run build` 再重新构建。平时调试 UI 建议单独 `npm start`，后端另行启动。
 
-2. **Milvus 连接被拒绝 / Connection Refused**
+2. **找不到 `mvnw`**
+    - **问题表现**：按旧说明操作或构建镜像时报 `./mvnw: No such file or directory`。
+    - **解决方案**：仓库未提交 Maven Wrapper，请改用本地 `mvn`（3.6.3+）。`Dockerfile` 构建阶段同样引用了 `./mvnw verify`，需一并修正。
+
+3. **Milvus 连接被拒绝 / Connection Refused**
     - **问题表现**：后端启动时抛出 `Failed to connect to Milvus` 异常。
     - **解决方案**：检查 Docker Compose 是否已完全启动（`docker ps` 确保 Milvus 状态为 `healthy` 或 `running`）；`standalone` 容器启动较慢，可用 `docker-compose logs standalone` 确认 `19530` 已开始监听；若 Milvus 部署在远程，请确保 `application.properties` 中的 `spring.ai.vectorstore.milvus.client.host` 地址可达。
 
-3. **Ollama 模型拉取失败或超时**
+4. **重启后检索质量下降**
+    - **问题表现**：清空 Redis 或重启应用后，混合结果排序发生变化，证据条目丢失页码与来源。
+    - **原因**：`BM25DocumentPersistenceService.loadDocuments()` 以 `new Document(text, new HashMap<>())` 重建文档，同时丢失原始 `docId` 与 metadata。RRF 正是按 `docId` 聚合两路结果，融合实际发生在全新的 UUID 上。
+    - **临时绕法**：启动后调用 `POST /admin/bm25/rebuild`，让 Lucene 索引从原始语料重建而不是从 Redis 恢复。
+
+5. **Agentic 请求返回 503 或网关超时**
+    - **原因**：`/api/agent/chat` 为同步端点，不受 `spring.mvc.async.request-timeout` 保护，也没有请求级截止；一轮可能发起 3 次检索 + rerank + 生成，仅每个出向调用各自有上限。
+    - **解决方案**：调高调用方超时（浏览器代理或 `DeepEvalSpringAIRAG/src/agent_client.py` 的 90s）、减小 `topK`，或在排查期间关闭 `rerank.enabled`。
+
+6. **Ollama 模型拉取失败或超时**
     - **问题表现**：对话或生成 Embedding 时后端日志提示模型调用超时或 404。
-    - **解决方案**：通过 `ollama pull <model_name>` 将 `bge-m3:latest` 或 `qwen2.5:0.5b` 拉取到本地，并检查 `http://127.0.0.1:11434` 是否存活。
+    - **解决方案**：通过 `ollama pull <model_name>` 将 `bge-m3:latest` 或 `qwen2.5:0.5b` 拉取到本地，并检查 `http://127.0.0.1:11434` 是否存活。Embedding 保留 `spring.ai.ollama.embedding.read-timeout=300s`；从 Spring Boot 4.2 起，若不显式设置，默认的 Reactor Netty 请求工厂会带来约 10 秒的实际读超时。
 
-4. **远程 API Key 缺失或被拒绝**
+7. **远程 API Key 缺失或被拒绝**
     - **问题表现**：Chat、Rerank 或 DeepSeek-OCR 调用出现鉴权或授权错误。
-    - **解决方案**：设置 `SILICONFLOW_KEY`，并确认该 Key 有权访问配置中的模型。
+    - **解决方案**：设置 `SILICONFLOW_KEY`，并确认该 Key 有权访问配置中的模型。优先级上 `SILICONFLOW_KEY` 高于 `OPENAI_API_KEY` 与 `siliconflow.api-key`。
 
-5. **Redis OOM（内存溢出）**
+8. **Redis OOM（内存溢出）**
     - **问题表现**：加载海量数据建立 BM25 索引持久化时 Redis 崩溃。
-    - **解决方案**：后端应用具备降级到本地 Lucene 内存索引的机制；请监控 Redis 内存分配，如有需要可在 `docker-compose.yml` 中调整 Redis 内存限制。
+    - **解决方案**：后端应用具备降级到本地 Lucene 内存索引的机制（持久化服务会将 `redisAvailable` 置为 false）；请监控 Redis 内存分配，如有需要可在 `docker-compose.yml` 中调整 Redis 内存限制。
+
+9. **评测得分读到 `0.0`**
+    - **解决方案**：不要将仓库自带的 `evaluation_report.json` 当作质量信号（限定条件见「评测体系」一节）；将 `DeepEvalSpringAIRAG/src/config.py` 指向后端实际使用的同一个 Milvus 实例，并重新生成 `rag_test_dataset.json` 后再解读 Context Recall。
+
+---
+
+## 📚 相关文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [Architecture.md](Architecture.md) | 组件拓扑、条件装配矩阵、八条数据流、数据结构与 metadata 字典、存储层布局（Milvus / Lucene / Redis）、前后端契约、配置矩阵，以及已知限制与技术债清单 |
+| [DOCKER-README.md](DOCKER-README.md) | 镜像源与 retag 步骤、数据卷、凭据、启动顺序、停止清理 |
+| [TEST-README.md](TEST-README.md) | 测试套件构成与运行方式 |
+| [frontend/front-end.md](frontend/front-end.md) | 前端组件说明 |
+| [src/docs/MIGRATION-BOOT-4.2.0-SPRING-AI-2.1.0-RECORD.md](src/docs/MIGRATION-BOOT-4.2.0-SPRING-AI-2.1.0-RECORD.md) | Spring Boot 4.2.0 / Spring AI 2.1.0 升级迁移记录 |

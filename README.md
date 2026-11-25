@@ -6,6 +6,10 @@ English | [简体中文](ReadMe_Zhcn.md)
 
 This project is a Retrieval-Augmented Generation (RAG) demonstration application based on Spring Boot 4.2.0 and Spring AI 2.1.0. It integrates the Milvus vector database and Large Language Models (LLMs) to provide an intelligent question-answering system for knowledge documents.
 
+Retrieval is hybrid — Lucene BM25 and Milvus vector search run in parallel and are merged with Reciprocal Rank Fusion, then optionally reranked by an external cross-encoder. On top of that, the application serves **two independent question-answering channels**: a single-shot *Native* pipeline and an *Agentic* bounded-runtime pipeline with query planning, multi-round retrieval and citation grounding.
+
+For the full architectural walkthrough — data flows, data structures, storage layouts and the frontend/backend contract — see [Architecture.md](Architecture.md).
+
 ---
 
 ## 🛠️ Tech Stack List
@@ -45,7 +49,7 @@ The following details the specific technology selections, their versions, and co
 | --- | --- | --- |
 | **Maven** | `3.6.3+` | Backend project dependency management and build tool. |
 | **Node.js & npm** | Node `v18.16.0`+, npm `9.5.1`+ | Frontend runtime environment and package management tool. |
-| **Frontend Maven Plugin**| `1.15.0` | Automatically builds the frontend project during the Maven build lifecycle (e.g., downloading Node and executing `npm run build`). |
+| **maven-resources-plugin** | Maven default | Copies an already-built `frontend/build` into `target/classes/static` during the `process-classes` phase, so the React SPA ships inside the same Spring Boot jar. **Note:** `pom.xml` declares a `frontend-maven-plugin.version` property but has no matching `<plugin>` block, so Maven never downloads Node nor runs `npm run build` — the frontend must be built separately. |
 | **Docker & Compose** | `20+` | Containerization technology, orchestrating the deployment environment of Redis, Milvus, and the application itself to resolve dependency conflicts. |
 | **JaCoCo** | `0.8.16` | Code coverage tool, generating statistical reports during the testing phase to ensure code quality. |
 | **Testcontainers** | `1.21.4` | Test-scope container runtime for the Milvus integration test. Spring Boot 4.2.0 no longer manages this version, so it is pinned explicitly in `pom.xml`. |
@@ -174,6 +178,105 @@ It also uses `SILICONFLOW_KEY`. PDF pages are rendered locally, sent as Base64 J
 
 ---
 
+## 🔀 Two Question-Answering Channels
+
+Both channels share the same retrieval stack, the same conversation store and the same React page; they differ in control flow.
+
+| | Native channel | Agentic channel |
+| --- | --- | --- |
+| Endpoint | `POST /chat/{chatId}` | `POST /api/agent/chat` |
+| Service | [`RagService.java`](src/main/java/com/redis/demo/spring/ai/service/RagService.java) | [`AgentRuntimeService.java`](src/main/java/com/redis/demo/spring/ai/agent/AgentRuntimeService.java) |
+| Execution model | Asynchronous (`CompletableFuture`) | Synchronous |
+| Retrieval rounds | exactly 1 | at most `MAX_TOOL_CALLS = 3` |
+| Query planning | none — the raw question is searched | `QueryPlanner` splits compound questions into sub-queries |
+| Request body | `{ "prompt": "..." }` | `{ "sessionId", "question", "topK"? }` |
+| Response body | `{ "message": "..." }` | `answer` + `evidence[]` + `plan` + `grounded` + `traceId`; `api.js` mirrors `answer` into a `message` field so `ChatWindow` renders either channel unchanged |
+| Citation verification | none | `GroundingChecker` requires at least one `[证据 N]` marker, and every cited ID must resolve to a returned evidence item |
+| Frontend entry | `#/native` | `#/agentic` (renders a collapsible evidence panel) |
+
+The Agentic channel is a **bounded** runtime rather than an open-ended tool loop: every ceiling is a compile-time constant in `AgentRuntimeService` (`MAX_TOOL_CALLS = 3`, `DEFAULT_TOP_K = 5`, `MAX_TOP_K = 20`, `MAX_CONTEXT_CHARS = 12_000`), and the control flow stays entirely in Java — the LLM only writes text and never decides which tool to invoke next.
+
+Behaviour is selected through interfaces, so either channel degrades without code changes:
+
+| Interface | Implementations | Selected by |
+| --- | --- | --- |
+| `RetrievalTool` | `HybridRetrievalTool` / `VectorOnlyRetrievalTool` | `hybrid.search.enabled` |
+| `QueryPlanner` | `RuleBasedQueryPlanner` (regex + keyword splitting, no LLM call) | always this one today |
+| `ConversationMemory` | `RedisConversationMemory` | Redis availability |
+| `VectorStoreStrategy` | `MilvusVectorStoreStrategy` / `GenericVectorStoreStrategy` | `spring.ai.vectorstore.milvus.client.host` |
+
+> ⏱️ **Timeout caveat.** The Native route sits inside a deliberate ladder: upstream model read timeout 60 s < `orTimeout(65, TimeUnit.SECONDS)` < `spring.mvc.async.request-timeout=90000`, so a slow LLM produces a readable Chinese error message instead of a bare 503. `/api/agent/chat` is a **synchronous** handler, therefore neither the 65 s nor the 90 s layer applies to it. Only each individual outbound call is capped (60 s for generation, 20 s for rerank); the turn as a whole — up to 3 retrievals plus rerank plus generation — has no request-level deadline, which is why the DeepEval agent client allows 90 s. Adding a `CompletableFuture` entry there would restore parity with Native. See [Architecture.md §3.8](Architecture.md).
+
+---
+
+## 🌐 REST API Surface
+
+| Method | Path | Purpose | Notes |
+| --- | --- | --- | --- |
+| `POST` | `/chat/startChat` | Create a session | Returns `{ "chatId": "<uuid>" }`; reused as the agent `sessionId` |
+| `POST` | `/chat/{chatId}` | Native question | Body `{ "prompt": "..." }`; returns `{ "message": "..." }` |
+| `GET` | `/chat/history/{chatId}` | Conversation history | Returns `{ sessionId, messages: [{ role, content }] }` |
+| `POST` | `/api/agent/chat` | Agentic question | Body `{ sessionId, question, topK? }`; the response `answer` is duplicated into `message` by the frontend, not by the backend |
+| `GET` | `/api/agent/history/{sessionId}` | Agentic history | Same `ConversationHistoryService` as the Native route |
+| `POST` | `/retrieve` | Retrieval only, no generation | Consumed by the DeepEval harness for context recall |
+| `GET` | `/admin/bm25/status` | BM25 index health | Indexed document count plus Redis availability flag |
+| `POST` | `/admin/bm25/rebuild` | Rebuild BM25 from the source corpus | Returns `{ success, bm25DocumentCount, message, error }` |
+| `POST` | `/documents/upload` | Upload hook | **Placeholder** — always answers `Document upload not supported` |
+
+Because both channels read and write the same Redis session store, a `chatId` returned by `/chat/startChat` works as an agent `sessionId` and vice versa; the frontend entry page depends on this.
+
+---
+
+## 📥 How Documents Enter the Index
+
+`RagDataLoader` is an `ApplicationRunner`. On startup it counts the collection records and **skips ingestion when there are already ≥ 10 documents**.
+
+Note that `src/main/resources/data/` is empty in this repository, so the live ingestion path is a remote download:
+
+1. `FileDownloader.DATA_BEERS_JSON_GZ` fetches `https://arxiv.org/pdf/2506.10380` (the TableRAG paper) into a temporary `beers-<random>.pdf`.
+2. With `deepseek-ocr.enabled=true`, `DeepSeekOcrDocumentReader` rasterises each page at 100 DPI, encodes JPEG at quality 0.9 and posts it to SiliconFlow DeepSeek-OCR across 4 threads, producing Markdown. The files under `ocr-output/` are by-products of exactly this step.
+3. `MarkdownProcessor` splits by heading, paragraph and table using `chunkTokenNum=800` counted with jtokkit `CL100K_BASE`; `TokenLimitEnforcer` then truncates anything beyond the 6 000-token safety threshold, against the `TokenCountBatchingStrategy` limit of 7 372 tokens.
+4. Each chunk is written to the vector store **and** to the Lucene BM25 index; the index is persisted to Redis as `bm25:doc:{docId}` (text clipped to 2 000 characters) plus the `bm25:index:docs` set.
+
+Disable `deepseek-ocr.enabled` to fall back to plain PDFBox text extraction. `.docx` files go through `RAGFlowDocxParser` and JSON through `JsonReader`.
+
+---
+
+## 🧪 Evaluation Harness
+
+Two independent stacks exist and they measure different things.
+
+### Python / DeepEval — [`DeepEvalSpringAIRAG/`](DeepEvalSpringAIRAG/)
+
+```bash
+cd DeepEvalSpringAIRAG
+pip install -r requirements.txt    # deepeval>=2.0, pymilvus, openai, pytest
+python 1_generate_testset.py       # Synthesizer goldens -> rag_test_dataset.json
+python -m src.main                 # -> evaluation_report.json
+python -m pytest tests -q          # unit tests for the harness itself
+```
+
+Requires `SILICONFLOW_KEY`. Goldens are synthesised from Milvus chunks (`paper_collection_vpdf`), Context Recall is scored against a `0.7` threshold through `POST /retrieve`, and `src/agent_client.py` additionally drives the full agent end-to-end via `POST /api/agent/chat` with a 90 s client timeout.
+
+### Java / LLM-as-a-Judge — [`src/test/java/com/redis/demo/spring/ai/`](src/test/java/com/redis/demo/spring/ai/)
+
+| Test class | Fixture | Judge configuration |
+| --- | --- | --- |
+| `FaithfulnessEvaluationTest` | `test-data/faithfulness-test-cases.json` | `evaluation.factuality.threshold=0.8` |
+| `CorrectnessEvaluationTest` | `test-data/correctness-test-cases.json` | `evaluation.relevance.threshold=0.7` |
+| `RagEvaluationTest` | `test-data/rag-test-cases.json` | retrieval-level checks |
+
+They are annotated `@TestPropertySource("classpath:application-evaluation.properties")` and `@EnabledIfEnvironmentVariable(named = "SILICONFLOW_KEY", matches = ".+")`, so they silently skip without a key. The judge model is `THUDM/GLM-Z1-9B-0414`.
+
+> ⚠️ Two caveats before trusting any score. The committed `evaluation_report.json` currently reports `0.0` and its goldens are polluted with judge prompt text; the ID-hit-rate helper is invoked with an empty retrieved list, so it always returns `0`. Separately, the Python harness defaults to Milvus at `10.1.1.234` while `application.properties` points at `192.168.0.223` — the evaluated collection may not be the served one.
+
+```bash
+mvn clean verify                        # unit + *IntegrationTest, JaCoCo report
+mvn test -Dtest=FaithfulnessEvaluationTest   # judge tests, requires SILICONFLOW_KEY
+```
+
+---
+
 ## 💻 Environmental Dependency Requirements
 
 To avoid environmental conflicts, please ensure your development and runtime environments meet the following minimum compatible versions:
@@ -219,6 +322,10 @@ docker-compose logs -f standalone
 
 Set `spring.ai.vectorstore.milvus.client.host` to `127.0.0.1` when the backend runs on the host, or to the service name `standalone` when it runs inside this compose network (the `spring` service already overrides it through `SPRING_AI_VECTORSTORE_MILVUS_CLIENT_HOST`). The port is fixed at `19530` in `RagConfiguration`. Image mirrors, data volumes, credentials, and cleanup steps are documented in [DOCKER-README.md](DOCKER-README.md).
 
+> ⚠️ `RagConfiguration` hard-codes the collection settings — `MetricType.COSINE`, `IndexType.IVF_FLAT`, `databaseName("default")` and port `19530`. Properties such as `spring.ai.vectorstore.milvus.metric-type=IP` are read by nobody and changing them has **no effect**. Only `embeddingDimension` and the host/collection name are actually honoured.
+
+> 🧟 Leftover coupling: `RagConfiguration` still injects `${spring.ai.vectorstore.pinecone.index-name}` with **no default value**, so the Pinecone properties in `application.properties` must be kept even though Pinecone is not used — deleting them makes the application fail to start.
+
 ### 2. Download and Run Local Models (Ollama)
 
 Ensure you have installed [Ollama](https://ollama.com/):
@@ -251,29 +358,30 @@ export REDIS_PORT=6379
 export REDIS_PASSWORD=your_redis_password
 ```
 
-### 4. Compile and Start Backend Service
+### 4. Build the Frontend
 
-Because the `frontend-maven-plugin` is used, Maven will automatically handle frontend downloading, dependency installation, and compilation during the build process.
-
-```bash
-# Windows
-mvnw.cmd clean install -DskipTests
-mvnw.cmd spring-boot:run
-
-# macOS / Linux
-./mvnw clean install -DskipTests
-./mvnw spring-boot:run
-```
-
-Once the application starts, it will automatically listen on port `8080`. Visit [http://localhost:8080](http://localhost:8080) to see the frontend React interface.
-
-*(Appendix: Commands to start the frontend separately:)*
+Maven does **not** build the frontend for you: `pom.xml` only carries a `frontend-maven-plugin.version` property with no plugin declaration. Instead, `maven-resources-plugin` copies `frontend/build` into `target/classes/static` at the `process-classes` phase — so the bundle must exist beforehand.
 
 ```bash
 cd frontend
 npm install
-npm start
+npm run build        # produces frontend/build
 ```
+
+To iterate on the UI without rebuilding the jar, run the dev server instead (`npm start`, CRA proxies to `:8080`).
+
+### 5. Compile and Start the Backend
+
+The repository has **no Maven Wrapper** (`mvnw` / `mvnw.cmd` are absent), so use a local Maven installation:
+
+```bash
+mvn clean install -DskipTests
+mvn spring-boot:run
+```
+
+Once the application starts it listens on port `8080`. Visit [http://localhost:8080](http://localhost:8080) for the React interface; the entry page lets you choose between the Native and the Agentic channel.
+
+> 🐳 The `Dockerfile` still runs `./mvnw verify` in its build stage and will therefore fail until a Maven Wrapper is committed or the line is changed to `mvn verify`.
 
 ---
 
@@ -281,25 +389,45 @@ npm start
 
 ```text
 spring-ai-redis-demo/
-├── frontend/                       # React frontend project directory
-│   ├── public/                     # Static resources (HTML templates, icons, etc.)
-│   ├── src/                        # Frontend source code
-│   │   ├── Components/             # UI components (e.g., ChatWindow)
-│   │   ├── App.js / api.js         # Frontend root component and API request encapsulation
-│   └── package.json                # Frontend dependency configuration
-├── src/
-│   ├── main/
-│   │   ├── java/com/redis/demo/    # Backend Java core business logic
-│   │   │   ├── RagApplication.java # Spring Boot startup class
-│   │   │   ├── RagController.java  # REST API routing
-│   │   │   ├── RagConfiguration.java# AI and vector database Bean configuration
-│   │   │   ├── RagDataLoader.java  # Pre-processing and injection of initial data on startup
-│   │   │   └── service/            # RAG, rerank, BM25 search and other business services
-│   │   └── resources/              # Backend configuration (application.properties, etc.)
-│   └── test/                       # Unit and integration tests
-├── Dockerfile                      # Application container build file
-├── docker-compose.yml              # Dependency service orchestration file
-└── pom.xml                         # Maven build and dependency management configuration file
+├── frontend/                         # React (CRA) frontend
+│   ├── src/Components/               # EntryPage (channel picker), ChatWindow, ChatBubble
+│   ├── src/Services/ChatService.js   # streaming / legacy chat transport
+│   ├── src/api.js                    # single entry point for all backend calls, ok-flag contract
+│   └── build/                        # npm output, copied into the jar by Maven
+├── src/main/java/com/redis/demo/spring/ai/
+│   ├── RagApplication.java           # Spring Boot entry point
+│   ├── RagController.java            # Native channel + /retrieve + /admin/bm25/*
+│   ├── AgentChatController.java      # Agentic channel (/api/agent/**)
+│   ├── RagConfiguration.java         # Milvus client, vector store and RetrievalTool beans
+│   ├── RagDataLoader.java            # ApplicationRunner: count check, ingest, BM25 rebuild
+│   ├── agent/                        # bounded agent runtime: QueryPlanner, RetrievalTool,
+│   │                                 # ContextBuilder, EvidenceMapper, GroundingChecker,
+│   │                                 # AnswerGenerator, AgentRuntimeService
+│   ├── service/                      # RagService, HybridSearchService, BM25SearchService,
+│   │                                 # RerankService, BM25DocumentPersistenceService,
+│   │                                 # ConversationHistoryService, DeepSeekOcrDocumentReader,
+│   │                                 # HybridDocumentService, VectorStoreStrategy*
+│   ├── memory/                       # ConversationMemory / RedisConversationMemory
+│   ├── model/                        # request/response records and Evidence / RetrievalResult
+│   ├── parse/                        # RAGFlowDocxParser
+│   ├── util/                         # FileDownloader, MarkdownProcessor, TokenLimitEnforcer,
+│   │                                 # ImageExtractor/Associator, OllamaRestClientFactory
+│   └── config/                       # ChatModelConfiguration, SSLConfig
+├── src/main/resources/
+│   ├── application.properties
+│   ├── prompts/system-qa.st          # Native channel prompt template
+│   └── static/                       # served frontend (populated at build time)
+├── src/test/                         # unit, integration and LLM-as-a-Judge evaluation tests
+├── DeepEvalSpringAIRAG/              # Python DeepEval harness (independent subsystem)
+│   ├── src/{main,config,agent_client}.py
+│   ├── src/services/                 # evaluator, spring_ai_service, milvus_service
+│   ├── 1_generate_testset.py         # golden-set synthesiser
+│   └── tests/                        # pytest suite for the harness itself
+├── ocr-output/                       # Markdown produced by the DeepSeek-OCR ingestion path
+├── Architecture.md                   # full architecture / data-flow / data-structure reference
+├── Dockerfile                        # multi-stage container build
+├── docker-compose.yml                # etcd + MinIO + Milvus + Redis Stack + application
+└── pom.xml                           # Maven build and dependency management
 ```
 
 ---
@@ -322,22 +450,51 @@ spring-ai-redis-demo/
 
 ## ❓ Troubleshooting
 
-1. **Frontend compilation failed or Node not found**
-    - **Symptom**: Error occurs at the `frontend-maven-plugin` step when running `mvn clean install`.
-    - **Solution**: Check if Node.js (`v18+`) is correctly installed on your system, or try clearing the Maven cache and trying again. Alternatively, manually enter the `frontend` directory to execute `npm install` and `npm run build`.
+1. **The served page is stale or blank**
+    - **Symptom**: UI changes do not appear after `mvn spring-boot:run`.
+    - **Cause**: the jar serves `target/classes/static`, which is populated from `frontend/build` at the `process-classes` phase. Maven never runs `npm`.
+    - **Solution**: run `npm run build` in `frontend/`, then rebuild. During UI work, use `npm start` against a separately running backend instead.
 
-2. **Milvus Connection Refused**
+2. **`mvnw` not found**
+    - **Symptom**: `./mvnw: No such file or directory` when following older instructions or building the Docker image.
+    - **Solution**: no Maven Wrapper is committed in this repository. Use a local `mvn` (3.6.3+). The `Dockerfile` build stage still references `./mvnw verify` and needs the same treatment.
+
+3. **Milvus Connection Refused**
     - **Symptom**: Backend throws `Failed to connect to Milvus` exception upon startup.
     - **Solution**: Check if Docker Compose is fully started (`docker ps` to ensure milvus status is `healthy` or `running`); the `standalone` container needs extra time before it serves `19530`, so inspect `docker-compose logs standalone` as well. If the Milvus server is deployed elsewhere, make sure `spring.ai.vectorstore.milvus.client.host` in `application.properties` points to that reachable address.
 
-3. **Ollama model pull failed or timed out**
+4. **Retrieval quality drops after a restart**
+    - **Symptom**: hybrid results look reordered, or evidence entries lose their page/source information after Redis was flushed or the app restarted.
+    - **Cause**: `BM25DocumentPersistenceService.loadDocuments()` restores documents as `new Document(text, new HashMap<>())`, dropping both the original `docId` and the metadata. Because RRF merges the two result lists by `docId`, the fusion is effectively rebuilt on fresh UUIDs.
+    - **Workaround**: call `POST /admin/bm25/rebuild` after startup so the Lucene index is regenerated from the source corpus rather than restored from Redis.
+
+5. **Agentic requests fail with 503 or a gateway timeout**
+    - **Cause**: `/api/agent/chat` is synchronous, so no request-level deadline applies (see the timeout caveat above); a turn may perform 3 retrievals plus rerank plus generation, and only each outbound call is capped individually.
+    - **Solution**: raise `spring.http.client.read-timeout` on the caller side, reduce `topK`, or disable rerank while debugging.
+
+6. **Ollama model pull failed or timed out**
     - **Symptom**: Backend logs indicate model call timeout or 404 during conversation.
-    - **Solution**: Ensure you have successfully pulled the model (e.g., `qwen2.5`) locally beforehand via `ollama pull <model_name>`, and check if `http://127.0.0.1:11434` is alive.
+    - **Solution**: Ensure you have successfully pulled the model (e.g., `qwen2.5`) locally beforehand via `ollama pull <model_name>`, and check if `http://127.0.0.1:11434` is alive. Note that embeddings keep `spring.ai.ollama.embedding.read-timeout=300s`; since Spring Boot 4.2 the default Reactor Netty request factory imposes roughly a 10 s read timeout when it is not set explicitly.
 
-4. **Remote API Key missing or rejected**
+7. **Remote API Key missing or rejected**
     - **Symptom**: Chat, rerank, or DeepSeek-OCR calls fail with authentication or authorization errors.
-    - **Solution**: Set `SILICONFLOW_KEY` and verify that the key has access to the configured models.
+    - **Solution**: Set `SILICONFLOW_KEY` and verify that the key has access to the configured models. `SILICONFLOW_KEY` takes precedence over `OPENAI_API_KEY` and over `siliconflow.api-key`.
 
-5. **Redis OOM (Out Of Memory) Issues**
+8. **Redis OOM (Out Of Memory) Issues**
     - **Symptom**: Redis crashes when loading massive data to establish BM25 index persistence.
     - **Solution**: The backend application has a mechanism to automatically downgrade to a local Lucene in-memory index; please monitor Redis memory allocation.
+
+9. **Evaluation scores read as `0.0`**
+    - **Solution**: treat the committed `evaluation_report.json` as unreliable (see the caveats under *Evaluation Harness*), point `DeepEvalSpringAIRAG/src/config.py` at the same Milvus instance the backend uses, and regenerate `rag_test_dataset.json` before interpreting Context Recall numbers.
+
+---
+
+## 📚 Further Documentation
+
+| Document | Contents |
+| --- | --- |
+| [Architecture.md](Architecture.md) | Component topology, conditional bean wiring, all eight data flows, data structures and metadata dictionary, storage layouts (Milvus / Lucene / Redis), the frontend-backend contract, the configuration matrix and a list of known limitations and technical debt |
+| [DOCKER-README.md](DOCKER-README.md) | Image mirrors and retag procedure, data volumes, credentials, startup order, cleanup |
+| [TEST-README.md](TEST-README.md) | Test suite layout and how to run it |
+| [frontend/front-end.md](frontend/front-end.md) | Frontend component notes |
+| [src/docs/MIGRATION-BOOT-4.2.0-SPRING-AI-2.1.0-RECORD.md](src/docs/MIGRATION-BOOT-4.2.0-SPRING-AI-2.1.0-RECORD.md) | Migration record for the Spring Boot 4.2.0 / Spring AI 2.1.0 upgrade |
