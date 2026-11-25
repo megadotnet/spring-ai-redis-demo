@@ -26,7 +26,7 @@ public class AgentRuntimeService {
     private static final Logger logger = LoggerFactory.getLogger(AgentRuntimeService.class);
 
     private static final int MAX_TOOL_CALLS = 3;
-    private static final int DEFAULT_TOP_K = 10;
+    private static final int DEFAULT_TOP_K = 5;
     private static final int MAX_TOP_K = 20;
     private static final int MAX_CONTEXT_CHARS = 12_000;
 
