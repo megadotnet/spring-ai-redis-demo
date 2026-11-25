@@ -1,8 +1,8 @@
 package com.redis.demo.spring.ai.service;
 
 import com.redis.demo.spring.ai.memory.ConversationMemory;
-import com.redis.demo.spring.ai.model.AgentChatHistoryResponse;
-import com.redis.demo.spring.ai.model.AgentChatHistoryResponse.AgentHistoryMessage;
+import com.redis.demo.spring.ai.model.ConversationHistoryResponse;
+import com.redis.demo.spring.ai.model.ConversationHistoryResponse.HistoryMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -10,10 +10,11 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * Agent 对话历史读取服务。
- * 只服务 Agentic RAG 通道：从 ConversationMemory（Redis 短期会话记忆）
- * 读取按时间正序的 role/content 消息，组装为前端可渲染的历史响应；
- * 旧 Native RAG 的 /chat/{chatId} 链路不经过此服务。
+ * 对话历史读取服务，服务两条通道：
+ * - Agentic RAG：AgentChatController 的 GET /api/agent/history/{sessionId}；
+ * - Native RAG：RagController 的 GET /chat/history/{chatId}。
+ * 两条通道共用 ConversationMemory（Redis，key 前缀 rag:session:）的 role/content 持久化，
+ * 因此同一会话 ID 在两条通道间回切时历史不丢。
  *
  * 兼容策略：
  * - sessionId 为空：返回空历史（Controller 层已先做参数校验，这里是兜底）；
@@ -21,19 +22,19 @@ import java.util.List;
  * - Redis 读取失败：包装为 IllegalStateException，由 Controller 转成 5xx。
  */
 @Service
-public class AgentHistoryService {
+public class ConversationHistoryService {
 
-    private static final Logger logger = LoggerFactory.getLogger(AgentHistoryService.class);
+    private static final Logger logger = LoggerFactory.getLogger(ConversationHistoryService.class);
 
     private final ConversationMemory memory;
 
-    public AgentHistoryService(ConversationMemory memory) {
+    public ConversationHistoryService(ConversationMemory memory) {
         this.memory = memory;
     }
 
-    public AgentChatHistoryResponse history(String sessionId) {
+    public ConversationHistoryResponse history(String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
-            return new AgentChatHistoryResponse("", List.of());
+            return new ConversationHistoryResponse("", List.of());
         }
 
         List<ConversationMemory.Turn> turns;
@@ -45,11 +46,11 @@ public class AgentHistoryService {
             throw new IllegalStateException("读取会话历史失败，请稍后重试", ex);
         }
 
-        List<AgentHistoryMessage> messages = turns.stream()
+        List<HistoryMessage> messages = turns.stream()
                 .filter(turn -> turn.content() != null && !turn.content().isBlank())
-                .map(turn -> new AgentHistoryMessage(normalizeRole(turn.role()), turn.content()))
+                .map(turn -> new HistoryMessage(normalizeRole(turn.role()), turn.content()))
                 .toList();
-        return new AgentChatHistoryResponse(sessionId, messages);
+        return new ConversationHistoryResponse(sessionId, messages);
     }
 
     /**

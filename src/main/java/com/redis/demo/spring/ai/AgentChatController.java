@@ -1,10 +1,10 @@
 package com.redis.demo.spring.ai;
 
 import com.redis.demo.spring.ai.agent.AgentRuntimeService;
-import com.redis.demo.spring.ai.model.AgentChatHistoryResponse;
 import com.redis.demo.spring.ai.model.AgentChatRequest;
 import com.redis.demo.spring.ai.model.AgentChatResponse;
-import com.redis.demo.spring.ai.service.AgentHistoryService;
+import com.redis.demo.spring.ai.model.ConversationHistoryResponse;
+import com.redis.demo.spring.ai.service.ConversationHistoryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,12 +26,12 @@ import java.util.Map;
 public class AgentChatController {
 
     private final AgentRuntimeService agentRuntimeService;
-    private final AgentHistoryService agentHistoryService;
+    private final ConversationHistoryService conversationHistoryService;
 
     public AgentChatController(AgentRuntimeService agentRuntimeService,
-            AgentHistoryService agentHistoryService) {
+            ConversationHistoryService conversationHistoryService) {
         this.agentRuntimeService = agentRuntimeService;
-        this.agentHistoryService = agentHistoryService;
+        this.conversationHistoryService = conversationHistoryService;
     }
 
     @PostMapping("/chat")
@@ -41,7 +41,8 @@ public class AgentChatController {
 
     /**
      * 读取 Agentic 会话的对话历史，供前端首次进入页面时恢复消息列表。
-     * Controller 只做参数校验与委托：历史读取、角色归一化都在 AgentHistoryService；
+     * Controller 只做参数校验与委托：历史读取、角色归一化都在 ConversationHistoryService
+     * （与 native 的 GET /chat/history/{chatId} 共用同一服务与存储）；
      * 会话不存在/无历史返回空列表（200），Redis 读取失败转 500 + 可读 message。
      */
     @GetMapping("/history/{sessionId}")
@@ -50,7 +51,7 @@ public class AgentChatController {
             return ResponseEntity.badRequest().body(Map.of("message", "sessionId 不能为空"));
         }
         try {
-            AgentChatHistoryResponse history = agentHistoryService.history(sessionId);
+            ConversationHistoryResponse history = conversationHistoryService.history(sessionId);
             return ResponseEntity.ok(history);
         } catch (IllegalStateException ex) {
             return ResponseEntity.internalServerError()

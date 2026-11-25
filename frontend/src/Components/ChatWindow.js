@@ -3,7 +3,7 @@ import Button from 'react-bootstrap/Button'
 import Badge from 'react-bootstrap/Badge';
 import Form from 'react-bootstrap/Form';
 import {ChatBubble} from './ChatBubble';
-import { SendMessage, SendAgentMessage, StartChat, StartAgentSession, FetchAgentHistory } from '../api';
+import { SendMessage, SendAgentMessage, StartChat, StartAgentSession, FetchAgentHistory, FetchNativeHistory } from '../api';
 
 // 同一个聊天组件服务两条通道，差别只在“调哪个接口 + 展示多少中间产物”。
 // native = RagController 的 /chat/{chatId}（legacy 回滚路径）
@@ -30,9 +30,13 @@ const truncate = (text, maxChars) => {
   return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
 };
 
-// agentic 通道把会话 ID 持久到本地，刷新/重进页面时恢复同一 session 并拉回历史；
-// native 通道不持久，保持旧行为（每次进入申请新 chatId）。
-const AGENT_SESSION_STORAGE_KEY = 'rag:agentic-session-id';
+// 两条通道都把会话 ID 持久到本地（各自独立 key，互不残留），
+// 刷新/重进页面时恢复同一会话并拉回历史；服务端共用 rag:session: 记忆，
+// 同一 ID 在两条通道间回切时历史互通。
+const SESSION_STORAGE_KEYS = {
+  native: 'rag:native-session-id',
+  agentic: 'rag:agentic-session-id'
+};
 
 export class ChatWindow extends Component{
   static displayName = ChatWindow.name;
@@ -115,7 +119,7 @@ export class ChatWindow extends Component{
 
   readSavedSession = () => {
     try{
-      return window.localStorage.getItem(AGENT_SESSION_STORAGE_KEY) || '';
+      return window.localStorage.getItem(SESSION_STORAGE_KEYS[this.mode]) || '';
     }
     catch(e){
       // 隐私模式等场景 localStorage 不可用：退回“每次新建会话”，不影响本页可用
@@ -125,24 +129,24 @@ export class ChatWindow extends Component{
 
   saveSession = (chatId) => {
     try{
-      window.localStorage.setItem(AGENT_SESSION_STORAGE_KEY, chatId);
+      window.localStorage.setItem(SESSION_STORAGE_KEYS[this.mode], chatId);
     }
     catch(e){
       // 存不下就只影响下次恢复，当前会话照常可用
     }
   }
 
-  // forceNew=true 时（点“新会话”）丢弃本地保存的 session，重新申请一条
+  // forceNew=true 时（点“新会话”）丢弃本地保存的 session，重新申请一条；
+  // 两条通道同策略：有存档先恢复，无存档才调各自 startChat 新建并落盘
   acquireSession = async (forceNew) => {
-    if(this.mode !== 'agentic'){
-      return (await StartChat()).chatId;
-    }
     const saved = forceNew ? '' : this.readSavedSession();
     if(saved){
       // 恢复旧会话：服务端无历史/TTL 过期都会正常返回空列表，不会报错
       return saved;
     }
-    const chatId = await StartAgentSession();
+    const chatId = this.mode === 'agentic'
+      ? await StartAgentSession()
+      : (await StartChat()).chatId;
     this.saveSession(chatId);
     return chatId;
   }
@@ -152,9 +156,7 @@ export class ChatWindow extends Component{
       const chatId = await this.acquireSession(forceNew === true);
       this.activeSessionId = chatId;
       this.setState({messages:[], input:'', textAreaRows: 1, chatId: chatId, messagePending: false, awaitingServer: false})
-      if(this.mode === 'agentic'){
-        await this.loadHistory(chatId);
-      }
+      await this.loadHistory(chatId);
     }
     catch(e){
       this.activeSessionId = '';
@@ -166,7 +168,9 @@ export class ChatWindow extends Component{
   // 历史加载失败只弹友好提示，不阻塞页面；后端未持久化 meta，故历史消息不带元信息
   loadHistory = async (sessionId) => {
     this.setState({historyLoading: true});
-    const result = await FetchAgentHistory(sessionId);
+    const result = this.mode === 'agentic'
+      ? await FetchAgentHistory(sessionId)
+      : await FetchNativeHistory(sessionId);
     // 加载期间用户可能已点“新会话”切走，旧结果直接丢弃
     if(this.activeSessionId !== sessionId){
       return;

@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.redis.demo.spring.ai.memory.ConversationMemory;
 import com.redis.demo.spring.ai.model.RetrievalResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,29 +52,75 @@ public class RagService {
 
 	private final HybridSearchService hybridSearchService;
 
+	/** 短期会话记忆（可空）：仅带 chatId 的 retrieve 重载会写入，旧测试/旧链路传 null 即保持无状态行为。 */
+	private final ConversationMemory conversationMemory;
+
 	/**
 	 * 构造函数（不启用 rerank 和混合检索）
 	 */
 	public RagService(ChatModel chatModel, VectorStore store) {
-		this(chatModel, store, null, null);
+		this(chatModel, store, null, null, null);
 	}
 
 	/**
 	 * 构造函数（支持可选的 rerank 服务，不启用混合检索）
 	 */
 	public RagService(ChatModel chatModel, VectorStore store, RerankService rerankService) {
-		this(chatModel, store, rerankService, null);
+		this(chatModel, store, rerankService, null, null);
 	}
 
 	/**
-	 * 构造函数（完整版：支持可选的 rerank 服务和混合检索服务）
+	 * 构造函数（完整版：支持可选的 rerank 服务和混合检索服务，无会话记忆）
 	 */
 	public RagService(ChatModel chatModel, VectorStore store, RerankService rerankService,
 			HybridSearchService hybridSearchService) {
+		this(chatModel, store, rerankService, hybridSearchService, null);
+	}
+
+	/**
+	 * 构造函数（方案 A：追加可选的 ConversationMemory，为 native 通道补会话历史写入端）
+	 */
+	public RagService(ChatModel chatModel, VectorStore store, RerankService rerankService,
+			HybridSearchService hybridSearchService, ConversationMemory conversationMemory) {
 		this.chatModel = chatModel;
 		this.store = store;
 		this.rerankService = rerankService;
 		this.hybridSearchService = hybridSearchService;
+		this.conversationMemory = conversationMemory;
+	}
+
+	/**
+	 * Native 通道带会话 ID 的入口：沿用无状态 retrieve(message) 的检索生成链路，
+	 * 仅在成功拿到非空回答后把 user/assistant 写入 ConversationMemory
+	 * （chatId 与 agentic 的 sessionId 同源，历史在两条通道间互通）。
+	 * 生成失败/超时时异常直接上抛，不会写入不完整轮次；记忆写入失败也不影响已成功的回答，
+	 * 对齐 AgentRuntimeService.saveTurns 的策略。
+	 */
+	public Generation retrieve(String chatId, String message) {
+		Generation generation = retrieve(message);
+		saveTurns(chatId, message, generation);
+		return generation;
+	}
+
+	private void saveTurns(String chatId, String question, Generation generation) {
+		if (conversationMemory == null || chatId == null || chatId.isBlank()) {
+			return;
+		}
+		String answer = generation != null && generation.getOutput() != null
+				? generation.getOutput().getText()
+				: null;
+		if (answer == null || answer.isBlank()) {
+			// 空回答不写入，避免历史里出现无法渲染的空轮次
+			return;
+		}
+		try {
+			conversationMemory.append(chatId, "user", question);
+			conversationMemory.append(chatId, "assistant", answer);
+		} catch (Exception ex) {
+			// 记忆写入失败不应阻塞用户响应；记录后由监控发现
+			logger.warn("Failed to persist native conversation turns for session {}: {}",
+					chatId, ex.getMessage());
+		}
 	}
 
 	// tag::retrieve[]

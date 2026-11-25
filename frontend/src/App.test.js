@@ -33,7 +33,8 @@ jest.mock('./api', () => ({
   SendAgentMessage: async () => mockAgentResponse,
   StartChat: async () => ({chatId: 'chat-1'}),
   StartAgentSession: async () => 'chat-1',
-  FetchAgentHistory: async () => mockHistoryResponse
+  FetchAgentHistory: async () => mockHistoryResponse,
+  FetchNativeHistory: async () => mockHistoryResponse
 }));
 
 afterEach(() => {
@@ -153,6 +154,30 @@ test('agentic mount restores history bubbles in chronological order', async () =
     expect(await screen.findByText('历史提问：什么是混合检索')).toBeInTheDocument();
     expect(screen.getByText('历史回答：向量与 BM25 融合召回')).toBeInTheDocument();
     // 加载完成后不应残留“正在加载”状态，也不伪造元信息面板
+    expect(screen.queryByText('正在加载对话历史…')).not.toBeInTheDocument();
+    expect(screen.queryByText(/引用校验/)).not.toBeInTheDocument();
+  }
+  finally{
+    mockHistoryResponse = {ok: true, status: 200, messages: []};
+  }
+});
+
+test('native mount restores history bubbles without agent meta', async () => {
+  // 方案 A：native 通道也持久化 chatId 并调 GET /chat/history/{chatId} 恢复；
+  // native 回答无 meta，历史渲染不应出现引用校验面板
+  mockHistoryResponse = {
+    ok: true,
+    status: 200,
+    messages: [
+      {role: 'user', content: 'native 历史提问'},
+      {role: 'assistant', content: 'native 历史回答'}
+    ]
+  };
+  try{
+    window.location.hash = '#/native';
+    render(<App />);
+    expect(await screen.findByText('native 历史提问')).toBeInTheDocument();
+    expect(screen.getByText('native 历史回答')).toBeInTheDocument();
     expect(screen.queryByText('正在加载对话历史…')).not.toBeInTheDocument();
     expect(screen.queryByText(/引用校验/)).not.toBeInTheDocument();
   }

@@ -173,19 +173,22 @@ public class RagConfiguration {
     }
 
     /**
-     * RagService Bean - 带可选的 RerankService 和 HybridSearchService
+     * RagService Bean - 带可选的 RerankService 和 HybridSearchService。
+     * 额外注入 ConversationMemory，供 native 通道 /chat/{chatId} 成功路径写入会话历史，
+     * 与 agentic 通道共用 rag:session: 记忆，支撑 GET /chat/history/{chatId} 的历史恢复。
      */
     @Bean
     public RagService ragService(ChatModel chatModel, VectorStore vectorStore,
             @Value("${rerank.enabled:false}") boolean rerankEnabled,
             @Value("${hybrid.search.enabled:false}") boolean hybridSearchEnabled,
             org.springframework.beans.factory.ObjectProvider<RerankService> rerankServiceProvider,
-            org.springframework.beans.factory.ObjectProvider<HybridSearchService> hybridSearchServiceProvider) {
+            org.springframework.beans.factory.ObjectProvider<HybridSearchService> hybridSearchServiceProvider,
+            com.redis.demo.spring.ai.memory.ConversationMemory conversationMemory) {
         RerankService rerankService = rerankEnabled ? rerankServiceProvider.getIfAvailable() : null;
         HybridSearchService hybridSearchService = hybridSearchEnabled
                 ? hybridSearchServiceProvider.getIfAvailable()
                 : null;
-        return new RagService(chatModel, vectorStore, rerankService, hybridSearchService);
+        return new RagService(chatModel, vectorStore, rerankService, hybridSearchService, conversationMemory);
     }
 
     /**

@@ -132,22 +132,25 @@ export const StartAgentSession = async function(){
 }
 
 /**
- * 拉取 Agent 会话历史，对应 AgentChatController 的 GET /api/agent/history/{sessionId}。
+ * 拉取会话历史的共享实现，对应服务端两个同构端点：
+ * - Agentic：AgentChatController 的 GET /api/agent/history/{sessionId}；
+ * - Native：RagController 的 GET /chat/history/{chatId}。
  * 服务端只持久化 role/content（traceId、evidence、plan、grounded 未落库），
  * 这里只返回可恢复的文本消息，不伪造元信息。
  * 与 SendAgentMessage 同风格：失败不抛出，返回 ok=false + 可读 error，
  * 调用方（ChatWindow）据此展示友好提示并继续可用。
  *
- * @param {string} sessionId 会话 ID
+ * @param {string} basePath 历史接口前缀（不含会话 ID）
+ * @param {string} sessionId 会话 ID（chatId 与 sessionId 同源）
  * @returns {Promise<{ok: boolean, status: number, messages: Array<{role: string, content: string}>, error?: string}>}
  */
-export const FetchAgentHistory = async function(sessionId){
+const fetchConversationHistory = async function(basePath, sessionId){
     if(!sessionId || String(sessionId).trim() === ''){
         return {ok:false, status:0, messages:[], error:'缺少会话 ID，无法加载历史。'};
     }
 
     try{
-        const response = await fetch(`api/agent/history/${encodeURIComponent(String(sessionId).trim())}`);
+        const response = await fetch(`${basePath}/${encodeURIComponent(String(sessionId).trim())}`);
         const data = await safeJson(response);
 
         if(!response.ok){
@@ -171,6 +174,14 @@ export const FetchAgentHistory = async function(sessionId){
             : `无法连接历史接口：${(e && e.message) || e}`;
         return {ok:false, status:0, messages:[], error:errorText};
     }
+}
+
+export const FetchAgentHistory = function(sessionId){
+    return fetchConversationHistory('api/agent/history', sessionId);
+}
+
+export const FetchNativeHistory = function(chatId){
+    return fetchConversationHistory('chat/history', chatId);
 }
 
 export const StartChat = async function(){
