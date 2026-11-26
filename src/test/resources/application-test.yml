@@ -1,0 +1,19 @@
+# 测试环境配置
+spring:
+  ai:
+    vectorstore:
+      redis:
+        index: test-beer-index
+        prefix: "test:"
+    openai:
+      api-key: test-key
+      
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      
+logging:
+  level:
+    com.redis.demo: DEBUG
+    org.springframework.ai: DEBUG

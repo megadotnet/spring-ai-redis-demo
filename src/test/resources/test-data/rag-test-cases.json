@@ -1,0 +1,32 @@
+{
+  "testCases": [
+    {
+      "id": "tablerag-001",
+      "question": "What is TableRAG?",
+      "expectedContext": "TableRAG is a Retrieval Augmented Generation Framework for Heterogeneous Document Reasoning. It addresses challenges in processing documents with both text and tables.",
+      "expectedAnswer": "TableRAG is a SQL-based framework designed for heterogeneous document reasoning involves both textual and tabular data. It unifies textual understanding and complex manipulations over tabular data.",
+      "scenario": "Concept Definition"
+    },
+    {
+      "id": "tablerag-002",
+      "question": "What are the limitations of existing RAG approaches for heterogeneous documents?",
+      "expectedContext": "Existing RAG approaches exhibit critical limitations when applied to heterogeneous documents. Flattening tables and chunking strategies disrupt intrinsic tabular structure.",
+      "expectedAnswer": "Existing RAG appoaches often flatten tables and use chunking strategies that disrupt the intrinsic tabular structure, leading to information loss and undermining reasoning capabilities for multi-hop or global queries.",
+      "scenario": "Problem Statement"
+    },
+    {
+      "id": "tablerag-003",
+      "question": "What are the four steps of TableRAG workflow?",
+      "expectedContext": "TableRAG iteratively operates in four steps: context-sensitive query decomposition, text retrieval, SQL programming and execution, and compositional intermediate answer generation.",
+      "expectedAnswer": "The four steps are: 1. Context-sensitive query decomposition, 2. Text retrieval, 3. SQL programming and execution, and 4. Compositional intermediate answer generation.",
+      "scenario": "Methodology"
+    },
+    {
+      "id": "tablerag-004",
+      "question": "What is HeteQA?",
+      "expectedContext": "We also develop HeteQA, a novel benchmark designed to evaluate the multi-hop heterogeneous reasoning capabilities.",
+      "expectedAnswer": "HeteQA is a novel benchmark developed to evaluate multi-hop heterogeneous reasoning capabilities in document question answering.",
+      "scenario": "Benchmark"
+    }
+  ]
+}

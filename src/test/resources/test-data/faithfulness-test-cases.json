@@ -1,0 +1,69 @@
+{
+  "description": "Faithfulness evaluation test cases based on TableRAG paper (arXiv:2506.10380). These cases test whether RAG responses are grounded in the retrieved context without hallucination.",
+  "testCases": [
+    {
+      "id": "faith-001",
+      "question": "What is the main contribution of TableRAG?",
+      "context": "TableRAG is a Retrieval Augmented Generation Framework for Heterogeneous Document Reasoning. It addresses challenges in processing documents with both text and tables. TableRAG uses a SQL-based framework designed for heterogeneous document reasoning that unifies textual understanding and complex manipulations over tabular data.",
+      "faithfulAnswer": "The main contribution of TableRAG is providing a SQL-based framework for heterogeneous document reasoning that unifies textual understanding and complex manipulations over tabular data.",
+      "unfaithfulAnswer": "TableRAG is the first system to use neural networks for table understanding and achieves 99% accuracy on all benchmarks.",
+      "scenario": "Concept Definition - Faithful vs Unfaithful"
+    },
+    {
+      "id": "faith-002",
+      "question": "How does TableRAG handle tabular data?",
+      "context": "TableRAG iteratively operates in four steps: context-sensitive query decomposition, text retrieval, SQL programming and execution, and compositional intermediate answer generation. The SQL programming step uses SQLite to represent and enable complex tabular operations.",
+      "faithfulAnswer": "TableRAG handles tabular data through SQL programming and execution using SQLite, which enables complex tabular operations as part of its four-step iterative workflow.",
+      "unfaithfulAnswer": "TableRAG converts all tables to JSON format and uses GPT-4 to directly parse the data structures.",
+      "scenario": "Methodology - Faithful vs Unfaithful"
+    },
+    {
+      "id": "faith-003",
+      "question": "What are the limitations of existing RAG approaches?",
+      "context": "Existing RAG approaches exhibit critical limitations when applied to heterogeneous documents. Flattening tables and chunking strategies disrupt intrinsic tabular structure, leading to information loss. This undermines reasoning capabilities for multi-hop or global queries.",
+      "faithfulAnswer": "Existing RAG approaches have limitations including: flattening tables disrupts their intrinsic structure, chunking strategies cause information loss, and these issues undermine multi-hop and global query reasoning capabilities.",
+      "unfaithfulAnswer": "Existing RAG approaches are too slow and cannot process documents larger than 100 pages.",
+      "scenario": "Problem Statement - Faithful vs Unfaithful"
+    },
+    {
+      "id": "faith-004",
+      "question": "What is HeteQA and what is it used for?",
+      "context": "We develop HeteQA, a novel benchmark designed to evaluate the multi-hop heterogeneous reasoning capabilities. HeteQA contains diverse question types requiring reasoning over both textual and tabular content.",
+      "faithfulAnswer": "HeteQA is a novel benchmark designed to evaluate multi-hop heterogeneous reasoning capabilities, containing diverse question types that require reasoning over both textual and tabular content.",
+      "unfaithfulAnswer": "HeteQA is a commercial product developed by Google for evaluating language models on general knowledge tasks.",
+      "scenario": "Benchmark - Faithful vs Unfaithful"
+    },
+    {
+      "id": "faith-005",
+      "question": "What types of queries does TableRAG support?",
+      "context": "TableRAG supports various query types including single-hop queries, multi-hop queries, and global aggregation queries. Multi-hop queries require reasoning across multiple pieces of evidence from both text and tables.",
+      "faithfulAnswer": "TableRAG supports single-hop queries, multi-hop queries, and global aggregation queries. Multi-hop queries require reasoning across multiple pieces of evidence from both text and tables.",
+      "unfaithfulAnswer": "TableRAG only supports simple keyword-based queries and cannot handle complex reasoning tasks.",
+      "scenario": "Query Types - Faithful vs Unfaithful"
+    },
+    {
+      "id": "faith-006",
+      "question": "How does TableRAG decompose queries?",
+      "context": "TableRAG performs context-sensitive query decomposition as its first step. This decomposition breaks down complex queries into simpler sub-queries that can be answered sequentially, considering the intermediate context from previous steps.",
+      "faithfulAnswer": "TableRAG uses context-sensitive query decomposition as its first step, breaking down complex queries into simpler sub-queries that are answered sequentially while considering intermediate context from previous steps.",
+      "unfaithfulAnswer": "TableRAG uses a rule-based parser that splits queries at punctuation marks without any semantic understanding.",
+      "scenario": "Query Decomposition - Faithful vs Unfaithful"
+    },
+    {
+      "id": "faith-007",
+      "question": "What role does SQL play in TableRAG?",
+      "context": "SQL programming and execution is the third step in TableRAG's workflow. The system generates SQL queries to extract and manipulate tabular data, using SQLite as the database engine for executing these operations.",
+      "faithfulAnswer": "SQL plays a central role as the third step in TableRAG's workflow, where the system generates SQL queries to extract and manipulate tabular data using SQLite as the database engine.",
+      "unfaithfulAnswer": "SQL is only used for storing the final results and has no role in the actual reasoning process.",
+      "scenario": "SQL Role - Faithful vs Unfaithful"
+    },
+    {
+      "id": "faith-008",
+      "question": "What is compositional intermediate answer generation?",
+      "context": "Compositional intermediate answer generation is the fourth step of TableRAG. In this step, the system synthesizes intermediate answers from retrieved text and SQL query results, which are then used as context for subsequent iterations.",
+      "faithfulAnswer": "Compositional intermediate answer generation is the fourth step of TableRAG where the system synthesizes intermediate answers from retrieved text and SQL query results, using them as context for subsequent iterations.",
+      "unfaithfulAnswer": "Compositional intermediate answer generation is a separate post-processing module that runs after TableRAG completes all its main processing.",
+      "scenario": "Answer Generation - Faithful vs Unfaithful"
+    }
+  ]
+}
