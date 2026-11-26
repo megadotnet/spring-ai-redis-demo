@@ -66,7 +66,7 @@ public class RedisConversationMemory implements ConversationMemory {
         String key = key(sessionId);
         try {
             String json = objectMapper.writeValueAsString(Map.of(
-                    "role", role,
+                    "role", role == null ? "" : role,
                     "content", content == null ? "" : content
             ));
             redis.opsForList().rightPush(key, json);

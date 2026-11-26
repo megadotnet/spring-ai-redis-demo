@@ -22,8 +22,11 @@ public class ContextBuilder {
         Map<String, Evidence> unique = new LinkedHashMap<>();
 
         for (Evidence item : evidence) {
+            if (item == null) {
+                continue;
+            }
             String id = item.documentId() == null
-                    ? item.source() + ":" + item.content().hashCode()
+                    ? item.source() + ":" + (item.content() == null ? 0 : item.content().hashCode())
                     : item.documentId();
             unique.putIfAbsent(id, item);
         }

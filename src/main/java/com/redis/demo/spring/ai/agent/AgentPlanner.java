@@ -25,9 +25,9 @@ public class AgentPlanner {
 
     private static final Logger logger = LoggerFactory.getLogger(AgentPlanner.class);
 
-    private static final String SYSTEM_PROMPT = """
+    private static final String SYSTEM_PROMPT_TEMPLATE = """
             你是检索任务规划器，不负责回答用户问题。
-            将复杂问题拆成最多 3 个互不重复、可独立检索的子问题。
+            将复杂问题拆成最多 %d 个互不重复、可独立检索的子问题。
             每个子问题最多给出 1 个搜索 query。
             不需要拆分的问题只生成一个子问题，并将原问题作为 query。
             只返回 JSON，不要返回 Markdown 代码块。
@@ -49,14 +49,18 @@ public class AgentPlanner {
     private final int maxQueryLength;
 
     @Autowired
+    public AgentPlanner(ChatModel chatModel, AgentLimits limits) {
+        this(chatModel, limits != null ? limits.maxSubQuestions() : 3, 500);
+    }
+
     public AgentPlanner(ChatModel chatModel) {
         this(chatModel, 3, 500);
     }
 
     AgentPlanner(ChatModel chatModel, int maxSubQuestions, int maxQueryLength) {
         this.chatModel = chatModel;
-        this.maxSubQuestions = maxSubQuestions;
-        this.maxQueryLength = maxQueryLength;
+        this.maxSubQuestions = maxSubQuestions > 0 ? maxSubQuestions : 3;
+        this.maxQueryLength = maxQueryLength > 0 ? maxQueryLength : 500;
     }
 
     /**
@@ -71,7 +75,7 @@ public class AgentPlanner {
         }
 
         Prompt prompt = new Prompt(List.of(
-                new SystemMessage(SYSTEM_PROMPT),
+                new SystemMessage(SYSTEM_PROMPT_TEMPLATE.formatted(maxSubQuestions)),
                 new UserMessage(question)
         ));
 

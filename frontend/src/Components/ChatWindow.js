@@ -191,8 +191,9 @@ export class ChatWindow extends Component{
     userType: item.role === 'user' ? 'user' : 'bot'
   })
 
-  handleKeyPress = (event)=>{
-    if (event.key === 'Enter') {
+  handleKeyDown = (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent?.isComposing) {
+      event.preventDefault();
       this.sendMessage();
     }
   };
@@ -316,7 +317,7 @@ export class ChatWindow extends Component{
           <div style={{display: 'flex', width: '100%'}}>
             <Form.Control              
               {... (this.uiDisabled() ? {disabled:'disabled'} : {})}
-              onKeyUp={this.handleKeyPress}
+              onKeyDown={this.handleKeyDown}
               as={'textarea'} 
               rows={this.state.textAreaRows} 
               cols={60}

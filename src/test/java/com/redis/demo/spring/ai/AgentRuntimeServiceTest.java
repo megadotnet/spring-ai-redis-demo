@@ -322,4 +322,64 @@ class AgentRuntimeServiceTest {
         assertThrows(IllegalArgumentException.class,
                 () -> service.run(new AgentChatRequest("s7", "  ", null)));
     }
+
+    @Test
+    void shouldPersistErrorFinalStatusWhenStageThrowsException() {
+        mockPlannerJson("""
+                {"subQuestions":[{"question":"q","searchQueries":["q"]}],"answerStrategy":"direct"}
+                """);
+        RetrievalTool retrievalTool = (query, topK) ->
+                List.of(evidence("doc-1", "相关内容"));
+        when(answerGenerator.answer(anyString(), anyString()))
+                .thenThrow(new RuntimeException("LLM upstream timeout"));
+
+        AgentRuntimeService service = newService(retrievalTool, defaultLimits());
+
+        assertThrows(IllegalStateException.class,
+                () -> service.run(new AgentChatRequest("s-stage-err", "test", 5)));
+
+        ArgumentCaptor<AgentTaskState> captor = ArgumentCaptor.forClass(AgentTaskState.class);
+        verify(taskStore, atLeastOnce()).save(captor.capture());
+        AgentTaskState lastState = captor.getValue();
+        assertEquals("ERROR", lastState.status());
+        assertEquals("ERROR", lastState.finalStatus());
+        assertTrue(lastState.events().stream()
+                .anyMatch(e -> "generate".equals(e.step()) && !e.success()
+                        && "stage_error".equals(e.errorType())));
+    }
+
+    @Test
+    void shouldHandleNullDocumentIdAndNullContentInContextBuilder() {
+        ContextBuilder builder = new ContextBuilder();
+        Evidence nullFields = new Evidence(null, null, "doc.pdf", 1, "hybrid", 0.5);
+
+        ContextBuilder.Context ctx = builder.build(List.of(nullFields), 1000);
+
+        assertEquals(1, ctx.evidence().size());
+        assertTrue(ctx.text().contains("unknown"));
+    }
+
+    @Test
+    void shouldRespectAgentLimitsMaxSubQuestionsInAgentPlanner() {
+        AgentLimits customLimits = new AgentLimits(2, 3, 1, 4, 20, 12, 12_000, Duration.ofSeconds(55));
+        mockPlannerJson("""
+                {
+                  "subQuestions": [
+                    {"question":"p1","searchQueries":["q1"]},
+                    {"question":"p2","searchQueries":["q2"]},
+                    {"question":"p3","searchQueries":["q3"]}
+                  ],
+                  "answerStrategy": "merge"
+                }
+                """);
+
+        AgentPlanner planner = new AgentPlanner(plannerChatModel, customLimits);
+        var plan = planner.plan("complex question");
+
+        assertEquals(2, plan.subQuestions().size());
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(plannerChatModel).call(promptCaptor.capture());
+        String systemPrompt = promptCaptor.getValue().getInstructions().get(0).getText();
+        assertTrue(systemPrompt.contains("最多 2 个"));
+    }
 }

@@ -1,9 +1,13 @@
 package com.redis.demo.spring.ai;
 
 import com.redis.demo.spring.ai.memory.ConversationMemory;
+import com.redis.demo.spring.ai.memory.RedisConversationMemory;
 import com.redis.demo.spring.ai.model.ConversationHistoryResponse;
 import com.redis.demo.spring.ai.service.ConversationHistoryService;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.data.redis.core.ListOperations;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.util.List;
 
@@ -100,5 +104,18 @@ class ConversationHistoryServiceTest {
         ConversationHistoryService service = new ConversationHistoryService(broken);
 
         assertThrows(IllegalStateException.class, () -> service.history("s3"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldTolerateNullRoleAndContentInRedisConversationMemoryAppend() {
+        StringRedisTemplate redis = Mockito.mock(StringRedisTemplate.class);
+        ListOperations<String, String> listOps = Mockito.mock(ListOperations.class);
+        Mockito.when(redis.opsForList()).thenReturn(listOps);
+
+        RedisConversationMemory memory = new RedisConversationMemory(redis);
+        memory.append("s-null", null, null);
+
+        Mockito.verify(listOps).rightPush(Mockito.eq("rag:session:s-null"), Mockito.anyString());
     }
 }

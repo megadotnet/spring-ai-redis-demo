@@ -200,3 +200,24 @@ test('history load failure shows a friendly hint and keeps the page usable', asy
     mockHistoryResponse = {ok: true, status: 200, messages: []};
   }
 });
+
+test('Shift+Enter inserts newline without sending, while Enter submits', async () => {
+  window.location.hash = '#/agentic';
+  render(<App />);
+  const input = await screen.findByRole('textbox');
+
+  await act(async () => {
+    userEvent.type(input, '第一行{shift>}{enter}{/shift}第二行');
+  });
+
+  // Shift+Enter 不应触发发送，输入框仍保留两行内容
+  expect(screen.queryByText('agent answer')).not.toBeInTheDocument();
+  expect(input).toHaveValue('第一行\n第二行');
+
+  await act(async () => {
+    userEvent.type(input, '{enter}');
+  });
+
+  expect(await screen.findByText('agent answer')).toBeInTheDocument();
+  expect(input).toHaveValue('');
+});

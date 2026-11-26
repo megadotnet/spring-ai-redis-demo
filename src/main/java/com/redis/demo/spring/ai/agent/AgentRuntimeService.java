@@ -76,6 +76,23 @@ public class AgentRuntimeService {
         List<AgentTraceEvent> events = new ArrayList<>();
         List<String> steps = new ArrayList<>();
 
+        try {
+            return executeRun(request, traceId, started, events, steps);
+        } catch (RuntimeException ex) {
+            logger.error("Agent run failed for traceId={}: {}", traceId, ex.getMessage(), ex);
+            telemetry.increment("rag.agent.answer.outcome", "error");
+            finish(traceId, request.sessionId(), started, events, "ERROR");
+            throw ex;
+        }
+    }
+
+    private AgentChatResponse executeRun(
+            AgentChatRequest request,
+            String traceId,
+            Instant started,
+            List<AgentTraceEvent> events,
+            List<String> steps) {
+
         saveState(traceId, request.sessionId(), "PLANNING",
                 started, events, null);
 
