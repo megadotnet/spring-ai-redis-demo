@@ -88,7 +88,7 @@ class Evaluator:
     
     @staticmethod
     def evaluate_id_hit_rate(expected_doc_ids: List[str], 
-                             retrieved_doc_ids: List[str]) -> float:
+                             retrieved_doc_ids: List[str]) -> Optional[float]:
         """计算 ID 命中率
         
         Args:
@@ -96,10 +96,10 @@ class Evaluator:
             retrieved_doc_ids: 实际检索到的文档 ID 列表
             
         Returns:
-            float: 命中率 (0.0 ~ 1.0)
+            Optional[float]: 命中率 (0.0 ~ 1.0)，若无标注 expected_doc_ids 则返回 None
         """
         if not expected_doc_ids:
-            return 0.0
+            return None
         
         expected_set = set(expected_doc_ids)
         retrieved_set = set(retrieved_doc_ids)
@@ -148,8 +148,10 @@ class Evaluator:
             retrieved_contexts = [r.content for r in retrieval_results]
             retrieved_doc_ids = [r.id for r in retrieval_results]
             
-            id_hit_rate = self.evaluate_id_hit_rate([], retrieved_doc_ids)
-            id_hit_rates.append(id_hit_rate)
+            expected_doc_ids = getattr(golden, "expected_document_ids", None) or []
+            id_hit_rate = self.evaluate_id_hit_rate(expected_doc_ids, retrieved_doc_ids)
+            if id_hit_rate is not None:
+                id_hit_rates.append(id_hit_rate)
             
             test_case = LLMTestCase(
                 input=question,

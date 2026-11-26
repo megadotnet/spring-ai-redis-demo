@@ -1,0 +1,22 @@
+{
+  "total_test_cases": 4,
+  "average_context_recall": 0.0,
+  "average_id_hit_rate": 0.0,
+  "individual_results": [
+    {
+      "question": "[\"+Option A: Clarify the query to resolve ambiguity; Option B: Discard if irreparable.\"]",
+      "score": 0,
+      "reason": null
+    },
+    {
+      "question": "Compare the accuracy and completeness of the assistant's answer to the gold answer.",
+      "score": 0,
+      "reason": null
+    },
+    {
+      "question": "[\"+ Hop logical query\"]",
+      "score": 0,
+      "reason": null
+    }
+  ]
+}

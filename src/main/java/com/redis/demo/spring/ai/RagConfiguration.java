@@ -2,6 +2,7 @@ package com.redis.demo.spring.ai;
 
 import com.redis.demo.spring.ai.service.BM25DocumentPersistenceService;
 import com.redis.demo.spring.ai.service.BM25SearchService;
+import com.redis.demo.spring.ai.service.Bm25AnalyzerFactory;
 import com.redis.demo.spring.ai.service.HybridSearchService;
 import com.redis.demo.spring.ai.service.RagService;
 import com.redis.demo.spring.ai.service.RerankService;
@@ -149,8 +150,11 @@ public class RagConfiguration {
     @Bean
     @ConditionalOnProperty(name = "hybrid.search.enabled", havingValue = "true")
     public BM25SearchService bm25SearchService(
+            Bm25AnalyzerFactory analyzerFactory,
+            @Value("${hybrid.bm25.k1:1.2}") float k1,
+            @Value("${hybrid.bm25.b:0.75}") float b,
             org.springframework.beans.factory.ObjectProvider<BM25DocumentPersistenceService> persistenceServiceProvider) {
-        BM25SearchService service = new BM25SearchService();
+        BM25SearchService service = new BM25SearchService(analyzerFactory.create(), k1, b);
         BM25DocumentPersistenceService persistenceService = persistenceServiceProvider.getIfAvailable();
         if (persistenceService != null) {
             service.setPersistenceService(persistenceService);

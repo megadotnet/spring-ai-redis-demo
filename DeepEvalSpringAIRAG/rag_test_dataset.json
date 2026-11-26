@@ -1,0 +1,86 @@
+[
+    {
+        "input": "[\"+Option A: Clarify the query to resolve ambiguity; Option B: Discard if irreparable.\"]",
+        "actual_output": null,
+        "expected_output": "[ \"+Option A: Clarify the query to resolve ambiguity; Option B: Discard if irreparable.\" ]",
+        "retrieval_context": null,
+        "context": [
+            "- Option A: Modify the query to resolve the ambiguity (e.g., make clarification).\n- Option B: If the ambiguity is irreparable or the answer depends on arbitrary choices, discard the case."
+        ],
+        "name": null,
+        "comments": null,
+        "source_file": null,
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Comparative"
+            ],
+            "synthetic_input_quality": 0.6
+        },
+        "custom_column_key_values": null
+    },
+    {
+        "input": "Compare the accuracy and completeness of the assistant's answer to the gold answer.",
+        "actual_output": null,
+        "expected_output": "{\n  \"Accuracy\": \"The assistant’s answer should match the gold answer in semantic consistency, numerical values, and order, with no hallucinations.\",\n  \"Completeness\": \"The assistant’s answer must include all key points from the reference answers, ensuring that the user gets a comprehensive response without further elaboration needed.\"\n}",
+        "retrieval_context": null,
+        "context": [
+            "- Accuracy and Hallucinations: The assistant’s answer is semantically consistent with the gold answer; The numerical value and order need to be accurate, and there should be no hallucinations.\n- Completeness: Referring to the reference answers, the assistant’s answer should contain all the key points needed to answer the user’s question; further elaboration on these key points can be omitted."
+        ],
+        "name": null,
+        "comments": null,
+        "source_file": null,
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Comparative"
+            ],
+            "synthetic_input_quality": 0.7
+        },
+        "custom_column_key_values": null
+    },
+    {
+        "input": "[\"+ Hop logical query\"]",
+        "actual_output": null,
+        "expected_output": "[\"+ Hop logical query: What is the impact of climate change on sea levels, and how does this affect coastal cities?\"]",
+        "retrieval_context": null,
+        "context": [
+            "Provide exactly ONE multi-hop reasoning query that:"
+        ],
+        "name": null,
+        "comments": null,
+        "source_file": null,
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "In-Breadth"
+            ],
+            "synthetic_input_quality": 0.8
+        },
+        "custom_column_key_values": null
+    },
+    {
+        "input": "{}",
+        "actual_output": null,
+        "expected_output": "{}",
+        "retrieval_context": null,
+        "context": [
+            "## Input"
+        ],
+        "name": null,
+        "comments": null,
+        "source_file": null,
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Hypothetical"
+            ],
+            "synthetic_input_quality": 0.2
+        },
+        "custom_column_key_values": null
+    }
+]
