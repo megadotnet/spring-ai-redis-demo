@@ -1,0 +1,39 @@
+# Docker 构建上下文排除项。
+# 目的：不把宿主机上的构建产物、依赖缓存和本地数据卷灌进镜像，
+# 否则上下文体积会到 GB 级，且 target/ 里的旧 class 会污染容器内的编译。
+
+# Maven / Node 产物：由容器内重新生成
+target/
+frontend/node_modules/
+**/node_modules/
+
+# 版本控制与 IDE 配置
+.git/
+.gitignore
+.github/
+.idea/
+.vscode/
+.codebuddy/
+*.iml
+
+# 本地数据卷与运行期输出，与镜像无关。诊断文件只排根目录那层，
+# 不能误伤 src/main/resources/static/robots.txt 这类需要打进镜像的资源
+volumes/
+ocr-output/
+/*.log
+/*.txt
+
+# Python 评测套件独立运行，不进后端镜像
+DeepEvalSpringAIRAG/
+**/__pycache__/
+**/.pytest_cache/
+**/*.py[cod]
+
+# Docker 自身的定义文件
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# 注意：这里刻意不排除 frontend/build。
+# 后端把 Web UI 静态资源交给 maven-resources-plugin，它从 frontend/build 拷到
+# target/classes/static；一旦排除，镜像里的界面就是空的。

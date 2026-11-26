@@ -1,0 +1,2 @@
+{"id":"retrieval-001","query":"论文的主要实验结果是什么","relevant_chunk_ids":["chunk-18","chunk-21"]}
+{"id":"retrieval-002","query":"模型训练使用的数据集名称","relevant_chunk_ids":["chunk-31"]}

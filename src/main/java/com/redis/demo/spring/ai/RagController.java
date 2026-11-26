@@ -9,8 +9,10 @@ import java.util.concurrent.TimeUnit;
 import com.redis.demo.spring.ai.model.Bm25RebuildResponse;
 import com.redis.demo.spring.ai.model.Bm25StatusResponse;
 import com.redis.demo.spring.ai.model.ChatSession;
+import com.redis.demo.spring.ai.model.ConversationHistoryResponse;
 import com.redis.demo.spring.ai.model.RetrievalResult;
 import com.redis.demo.spring.ai.service.Bm25AdminService;
+import com.redis.demo.spring.ai.service.ConversationHistoryService;
 import com.redis.demo.spring.ai.service.RagService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -25,10 +27,13 @@ public class RagController {
 
 	private final RagService ragService;
 	private final Bm25AdminService bm25AdminService;
+	private final ConversationHistoryService conversationHistoryService;
 
-	public RagController(RagService ragService, Bm25AdminService bm25AdminService) {
+	public RagController(RagService ragService, Bm25AdminService bm25AdminService,
+			ConversationHistoryService conversationHistoryService) {
 		this.ragService = ragService;
 		this.bm25AdminService = bm25AdminService;
+		this.conversationHistoryService = conversationHistoryService;
 	}
 
 	@PostMapping("/chat/startChat")
@@ -49,7 +54,7 @@ public class RagController {
 					// 这里执行耗时操作 (25s+)
 					// 注意：请确保 ragService 内部调用的 Client 超时设置已大于 60s
 					// 假设 prompt.getContents() 获取文本，请根据实际对象调整
-					return ragService.retrieve(prompt.getPrompt());
+					return ragService.retrieve(chatId, prompt.getPrompt());
 				})
 				// 3. 设置 Java 层面的超时 (JDK 9+ 支持 orTimeout)
 				// 必须小于 spring.mvc.async.request-timeout(90s)、大于上游 HTTP 读取超时(60s)，
@@ -75,6 +80,29 @@ public class RagController {
 				});
 	}
 	//end::chatMessage[]
+
+	/**
+	 * 读取 Native 会话的对话历史，供前端首次进入页面时恢复消息列表；
+	 * 与 /api/agent/history/{sessionId} 同构，同样委托 ConversationHistoryService
+	 * 读取共用的 rag:session: 记忆。路由风格对齐现有 /chat 前缀，同步 GET，
+	 * 不占用上方异步链路的 65s orTimeout / 90s async timeout 预算。
+	 * Controller 只做参数校验与委托：会话不存在/无历史返回空列表（200），
+	 * Redis 读取失败转 500 + 可读 message。
+	 */
+	@GetMapping("/chat/history/{chatId}")
+	@ResponseBody
+	public ResponseEntity<?> chatHistory(@PathVariable("chatId") String chatId) {
+		if (chatId == null || chatId.isBlank()) {
+			return ResponseEntity.badRequest().body(Map.of("message", "chatId 不能为空"));
+		}
+		try {
+			ConversationHistoryResponse history = conversationHistoryService.history(chatId);
+			return ResponseEntity.ok(history);
+		} catch (IllegalStateException ex) {
+			return ResponseEntity.internalServerError()
+					.body(Map.of("message", "会话历史读取失败，请稍后重试"));
+		}
+	}
 
 	@PostMapping("/documents/upload")
 	@ResponseBody

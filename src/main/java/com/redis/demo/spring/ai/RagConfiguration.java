@@ -2,6 +2,7 @@ package com.redis.demo.spring.ai;
 
 import com.redis.demo.spring.ai.service.BM25DocumentPersistenceService;
 import com.redis.demo.spring.ai.service.BM25SearchService;
+import com.redis.demo.spring.ai.service.Bm25AnalyzerFactory;
 import com.redis.demo.spring.ai.service.HybridSearchService;
 import com.redis.demo.spring.ai.service.RagService;
 import com.redis.demo.spring.ai.service.RerankService;
@@ -149,8 +150,11 @@ public class RagConfiguration {
     @Bean
     @ConditionalOnProperty(name = "hybrid.search.enabled", havingValue = "true")
     public BM25SearchService bm25SearchService(
+            Bm25AnalyzerFactory analyzerFactory,
+            @Value("${hybrid.bm25.k1:1.2}") float k1,
+            @Value("${hybrid.bm25.b:0.75}") float b,
             org.springframework.beans.factory.ObjectProvider<BM25DocumentPersistenceService> persistenceServiceProvider) {
-        BM25SearchService service = new BM25SearchService();
+        BM25SearchService service = new BM25SearchService(analyzerFactory.create(), k1, b);
         BM25DocumentPersistenceService persistenceService = persistenceServiceProvider.getIfAvailable();
         if (persistenceService != null) {
             service.setPersistenceService(persistenceService);
@@ -173,10 +177,33 @@ public class RagConfiguration {
     }
 
     /**
-     * RagService Bean - 带可选的 RerankService 和 HybridSearchService
+     * RagService Bean - 带可选的 RerankService 和 HybridSearchService。
+     * 额外注入 ConversationMemory，供 native 通道 /chat/{chatId} 成功路径写入会话历史，
+     * 与 agentic 通道共用 rag:session: 记忆，支撑 GET /chat/history/{chatId} 的历史恢复。
      */
     @Bean
     public RagService ragService(ChatModel chatModel, VectorStore vectorStore,
+            @Value("${rerank.enabled:false}") boolean rerankEnabled,
+            @Value("${hybrid.search.enabled:false}") boolean hybridSearchEnabled,
+            org.springframework.beans.factory.ObjectProvider<RerankService> rerankServiceProvider,
+            org.springframework.beans.factory.ObjectProvider<HybridSearchService> hybridSearchServiceProvider,
+            com.redis.demo.spring.ai.memory.ConversationMemory conversationMemory) {
+        RerankService rerankService = rerankEnabled ? rerankServiceProvider.getIfAvailable() : null;
+        HybridSearchService hybridSearchService = hybridSearchEnabled
+                ? hybridSearchServiceProvider.getIfAvailable()
+                : null;
+        return new RagService(chatModel, vectorStore, rerankService, hybridSearchService, conversationMemory);
+    }
+
+    /**
+     * RetrievalTool Bean - Agent 链路的统一检索工具入口。
+     * hybrid.search.enabled=true 时使用 HybridRetrievalTool（Milvus + BM25 + RRF + 可选 Rerank）；
+     * 否则降级为 VectorOnlyRetrievalTool，保证 Agent Runtime 始终有可用检索实现，
+     * 应用启动不会因缺少工具 Bean 失败。旧 RagService 链路不受影响，可继续作为回滚路径。
+     */
+    @Bean
+    public com.redis.demo.spring.ai.agent.RetrievalTool retrievalTool(
+            VectorStore vectorStore,
             @Value("${rerank.enabled:false}") boolean rerankEnabled,
             @Value("${hybrid.search.enabled:false}") boolean hybridSearchEnabled,
             org.springframework.beans.factory.ObjectProvider<RerankService> rerankServiceProvider,
@@ -185,7 +212,12 @@ public class RagConfiguration {
         HybridSearchService hybridSearchService = hybridSearchEnabled
                 ? hybridSearchServiceProvider.getIfAvailable()
                 : null;
-        return new RagService(chatModel, vectorStore, rerankService, hybridSearchService);
+        if (hybridSearchService != null) {
+            return new com.redis.demo.spring.ai.agent.HybridRetrievalTool(hybridSearchService, rerankService);
+        }
+        return new com.redis.demo.spring.ai.agent.VectorOnlyRetrievalTool(
+                vectorStore,
+                new com.redis.demo.spring.ai.agent.VectorOnlyRetrievalTool.RerankHolder(rerankService));
     }
 
 }

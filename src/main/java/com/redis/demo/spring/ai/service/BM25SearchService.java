@@ -42,6 +42,8 @@ public class BM25SearchService {
 
     private Directory directory;
     private Analyzer analyzer;
+    private final float k1;
+    private final float b;
     private final Map<String, Document> documentStore;
     private final ReadWriteLock lock;
     private boolean indexBuilt;
@@ -50,8 +52,14 @@ public class BM25SearchService {
     private BM25DocumentPersistenceService persistenceService;
 
     public BM25SearchService() {
+        this(new StandardAnalyzer(), 1.2f, 0.75f);
+    }
+
+    public BM25SearchService(Analyzer analyzer, float k1, float b) {
         this.directory = new ByteBuffersDirectory();
-        this.analyzer = new StandardAnalyzer();
+        this.analyzer = analyzer != null ? analyzer : new StandardAnalyzer();
+        this.k1 = k1 > 0 ? k1 : 1.2f;
+        this.b = (b >= 0 && b <= 1.0f) ? b : 0.75f;
         this.documentStore = new HashMap<>();
         this.lock = new ReentrantReadWriteLock();
         this.indexBuilt = false;
@@ -131,7 +139,7 @@ public class BM25SearchService {
             documentStore.clear();
 
             IndexWriterConfig config = new IndexWriterConfig(analyzer);
-            config.setSimilarity(new BM25Similarity(1.2f, 0.75f)); // BM25 参数 k1 和 b
+            config.setSimilarity(new BM25Similarity(k1, b)); // BM25 参数 k1 和 b
             config.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
 
             try (IndexWriter writer = new IndexWriter(directory, config)) {
@@ -186,7 +194,7 @@ public class BM25SearchService {
         lock.writeLock().lock();
         try {
             IndexWriterConfig config = new IndexWriterConfig(analyzer);
-            config.setSimilarity(new BM25Similarity(1.2f, 0.75f));
+            config.setSimilarity(new BM25Similarity(k1, b));
             config.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
 
             try (IndexWriter writer = new IndexWriter(directory, config)) {
@@ -234,7 +242,7 @@ public class BM25SearchService {
         try {
             DirectoryReader reader = DirectoryReader.open(directory);
             IndexSearcher searcher = new IndexSearcher(reader);
-            searcher.setSimilarity(new BM25Similarity(1.2f, 0.75f));
+            searcher.setSimilarity(new BM25Similarity(k1, b));
 
             // 转义特殊字符并创建查询
             String escapedQuery = QueryParser.escape(queryText.trim());

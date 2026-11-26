@@ -192,7 +192,7 @@ class TestEvaluator:
         retrieved = ["doc1", "doc2"]
         
         rate = Evaluator.evaluate_id_hit_rate(expected, retrieved)
-        assert rate == 0.0
+        assert rate is None
 
     def test_load_cached_dataset_success(self):
         """测试成功加载缓存数据集"""

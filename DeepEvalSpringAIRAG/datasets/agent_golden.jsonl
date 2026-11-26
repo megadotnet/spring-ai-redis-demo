@@ -1,0 +1,2 @@
+{"id":"paper-method-001","input":"这篇论文采用了什么方法？实验结果如何？","expected_output":"论文使用了……，实验结果显示……","expected_document_ids":["chunk-12","chunk-18"],"expected_tools":["hybrid_retrieve"],"max_tool_calls":4}
+{"id":"unknown-001","input":"文档中是否说明了未出现的部署地址？","expected_output":"资料中没有提供该部署地址。","expected_document_ids":[],"expected_tools":["hybrid_retrieve"],"max_tool_calls":4}

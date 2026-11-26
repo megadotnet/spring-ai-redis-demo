@@ -2,8 +2,10 @@ package com.redis.demo.spring.ai;
 
 import com.redis.demo.spring.ai.model.Bm25RebuildResponse;
 import com.redis.demo.spring.ai.model.Bm25StatusResponse;
+import com.redis.demo.spring.ai.model.ConversationHistoryResponse;
 import com.redis.demo.spring.ai.model.RetrievalResult;
 import com.redis.demo.spring.ai.service.Bm25AdminService;
+import com.redis.demo.spring.ai.service.ConversationHistoryService;
 import com.redis.demo.spring.ai.service.RagService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +34,9 @@ class RagControllerTest {
 
     @MockitoBean
     private Bm25AdminService bm25AdminService;
+
+    @MockitoBean
+    private ConversationHistoryService conversationHistoryService;
 
     @Test
     void retrieveShouldReturnRetrievalResults() throws Exception {
@@ -107,6 +112,44 @@ class RagControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.chatId").isString())
                 .andExpect(jsonPath("$.chatId").isNotEmpty());
+    }
+
+    @Test
+    void chatHistoryShouldReturnStructuredMessages() throws Exception {
+        when(conversationHistoryService.history("c1")).thenReturn(new ConversationHistoryResponse(
+                "c1",
+                List.of(
+                        new ConversationHistoryResponse.HistoryMessage("user", "历史提问"),
+                        new ConversationHistoryResponse.HistoryMessage("assistant", "历史回答")
+                )));
+
+        mockMvc.perform(get("/chat/history/c1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessionId").value("c1"))
+                .andExpect(jsonPath("$.messages[0].role").value("user"))
+                .andExpect(jsonPath("$.messages[0].content").value("历史提问"))
+                .andExpect(jsonPath("$.messages[1].role").value("assistant"));
+    }
+
+    @Test
+    void chatHistoryShouldReturnEmptyListForUnknownSession() throws Exception {
+        when(conversationHistoryService.history("missing"))
+                .thenReturn(new ConversationHistoryResponse("missing", List.of()));
+
+        mockMvc.perform(get("/chat/history/missing"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages").isArray())
+                .andExpect(jsonPath("$.messages").isEmpty());
+    }
+
+    @Test
+    void chatHistoryShouldReturn500WhenMemoryFails() throws Exception {
+        when(conversationHistoryService.history("broken"))
+                .thenThrow(new IllegalStateException("读取会话历史失败"));
+
+        mockMvc.perform(get("/chat/history/broken"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.message").isString());
     }
 
     @Test
